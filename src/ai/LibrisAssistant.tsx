@@ -3,95 +3,113 @@ import {
   Sparkles,
   Send,
   BookOpen,
-  ShieldCheck,
-  ShieldAlert,
-  Cpu,
-  Layers,
   FileText,
-  RotateCcw,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  ExternalLink,
+  HelpCircle,
   Zap,
+  Trash2,
+  Lock,
+  ChevronDown,
+  ExternalLink,
+  Cpu,
+  Bookmark,
+  Check,
 } from 'lucide-react';
-import { Document, LibrisChatMessage, LibrisSourceCitation } from '../core/types';
-import { OllamaProvider } from './providers/OllamaProvider';
-import { OpenAICompatibleProvider } from './providers/OpenAICompatibleProvider';
-import { ContextAssembler } from './rag/ContextAssembler';
-import { IAIProvider, AIMessage } from './AIProvider';
+import {
+  Document,
+  LibrisChatMessage,
+  LibrisSourceCitation,
+  CustomAIProviderConfig,
+} from '../core/types';
 import { db } from '../core/db/DatabaseEngine';
+import { chunkDocumentText } from './rag/DocumentChunker';
+import { ContextAssembler } from './rag/ContextAssembler';
+import { CustomAIProvider } from './providers/CustomAIProvider';
+import { usePlatform } from '../platform/PlatformContext';
 
 interface LibrisAssistantProps {
-  activeDocument?: Document | null;
-  initialQuery?: string;
+  currentDocument?: Document | null;
+  selectedTextPassage?: string;
   onClose: () => void;
-  onNavigateToDocument?: (docId: string) => void;
+  onNavigateToCitation?: (docId: string, location: string) => void;
 }
 
 export const LibrisAssistant: React.FC<LibrisAssistantProps> = ({
-  activeDocument,
-  initialQuery = '',
+  currentDocument,
+  selectedTextPassage,
   onClose,
-  onNavigateToDocument,
+  onNavigateToCitation,
 }) => {
-  const [providerType, setProviderType] = useState<'ollama' | 'lmstudio' | 'openai'>('ollama');
-  const [currentProvider, setCurrentProvider] = useState<IAIProvider>(new OllamaProvider());
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string>('llama3:latest');
+  const platform = usePlatform();
 
-  const [inputQuery, setInputQuery] = useState(initialQuery);
-  const [messages, setMessages] = useState<LibrisChatMessage[]>([
-    {
-      id: 'msg_welcome',
-      sender: 'libris',
-      content: activeDocument
-        ? `Hello! I am **Libris**, your private knowledge companion. I have loaded **${activeDocument.title}** into our document context. How can I assist you with this text?`
-        : `Hello! I am **Libris**, your private AI assistant. I can search across your entire universal library, summarize books, create study guides, and synthesize notes with zero telemetry.`,
-      timestamp: Date.now(),
-    },
-  ]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
+  // State
+  const [messages, setMessages] = useState<LibrisChatMessage[]>([]);
+  const [inputQuery, setInputQuery] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingContent, setStreamingContent] = useState('');
+  const [streamingSources, setStreamingSources] = useState<LibrisSourceCitation[]>([]);
 
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  // Providers & Context
+  const [providers, setProviders] = useState<CustomAIProviderConfig[]>([]);
+  const [activeProviderId, setActiveProviderId] = useState<string>('');
+  const [allDocs, setAllDocs] = useState<Document[]>([]);
+  const [selectedContextDocId, setSelectedContextDocId] = useState<string>(
+    currentDocument?.id || 'library'
+  );
 
-  // Initialize Provider
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Load Database Providers, Documents, and Chunks
   useEffect(() => {
-    let p: IAIProvider;
-    if (providerType === 'ollama') {
-      p = new OllamaProvider();
-    } else if (providerType === 'lmstudio') {
-      p = new OpenAICompatibleProvider({ name: 'LM Studio / llama.cpp', endpointUrl: 'http://localhost:1234/v1', isLocal: true });
-    } else {
-      p = new OpenAICompatibleProvider({ name: 'OpenAI Cloud', endpointUrl: 'https://api.openai.com/v1', isLocal: false });
+    const initData = async () => {
+      const dbProviders = await db.getAIProviders();
+      setProviders(dbProviders);
+      const def = dbProviders.find(p => p.isDefault) || dbProviders[0];
+      if (def) setActiveProviderId(def.id);
+
+      const docs = await db.getDocuments();
+      setAllDocs(docs);
+
+      // Index chunks for database
+      for (const d of docs) {
+        if (d.contentSnippet) {
+          const chunks = chunkDocumentText(d.id, d.contentSnippet);
+          await db.saveDocumentChunks(d.id, chunks);
+        }
+      }
+
+      // Initial welcome message
+      setMessages([
+        {
+          id: 'welcome-1',
+          sender: 'libris',
+          content: currentDocument
+            ? `Libris Research Terminal active. Context loaded: **${currentDocument.title}** (${currentDocument.format.toUpperCase()}).\n\nAsk questions, generate flashcards, or extract key points with local RAG citations.`
+            : `Libris Research Terminal active. Universal Library Knowledge Base loaded.\n\nAsk anything about your books, papers, and personal notes.`,
+          timestamp: Date.now(),
+        },
+      ]);
+    };
+
+    initData();
+  }, [currentDocument]);
+
+  useEffect(() => {
+    if (selectedTextPassage) {
+      setInputQuery(`Explain this excerpt: "${selectedTextPassage}"`);
     }
-    setCurrentProvider(p);
+  }, [selectedTextPassage]);
 
-    p.getAvailableModels().then(models => {
-      setAvailableModels(models);
-      if (models.length > 0) setSelectedModel(models[0]);
-    });
-  }, [providerType]);
-
-  // Auto-scroll to bottom on new message
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, streamingContent]);
 
-  // Handle Initial Query if passed from selection
-  useEffect(() => {
-    if (initialQuery && initialQuery.trim().length > 0) {
-      handleSendMessage(`Explain or analyze this passage: "${initialQuery}"`);
-    }
-  }, [initialQuery]);
-
-  const handleSendMessage = async (textToSend?: string) => {
-    const query = textToSend || inputQuery;
-    if (!query.trim() || isLoading) return;
+  // Execute RAG Query & Stream AI Response
+  const handleSendMessage = async (customPrompt?: string) => {
+    const query = customPrompt || inputQuery;
+    if (!query.trim() || isStreaming) return;
 
     const userMsg: LibrisChatMessage = {
-      id: `user_${Date.now()}`,
+      id: `msg_user_${Date.now()}`,
       sender: 'user',
       content: query,
       timestamp: Date.now(),
@@ -99,269 +117,316 @@ export const LibrisAssistant: React.FC<LibrisAssistantProps> = ({
 
     setMessages(prev => [...prev, userMsg]);
     setInputQuery('');
-    setIsLoading(true);
+    setIsStreaming(true);
+    setStreamingContent('');
+    setStreamingSources([]);
+
+    // 1. Assemble RAG Context & Source Citations
+    const activeDocFilter = selectedContextDocId !== 'library' ? selectedContextDocId : undefined;
+    const { systemPrompt, sources } = await ContextAssembler.assembleContext(query, {
+      documentId: activeDocFilter,
+    });
+
+    setStreamingSources(sources);
+
+    // 2. Invoke Active AI Provider
+    const activeConfig = providers.find(p => p.id === activeProviderId) || providers[0];
+    const providerClient = new CustomAIProvider(
+      activeConfig || {
+        id: 'fallback',
+        name: 'Local Ollama',
+        baseUrl: 'http://localhost:11434',
+        modelName: 'llama3',
+        isLocal: true,
+      }
+    );
 
     try {
-      // 1. RAG Context Retrieval & Assembly
-      const { systemPrompt, sources } = await ContextAssembler.assembleContext(query, {
-        documentId: activeDocument?.id,
-      });
+      let accumulatedResponse = '';
+      await providerClient.streamCompletion(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: query },
+        ],
+        chunk => {
+          accumulatedResponse += chunk;
+          setStreamingContent(accumulatedResponse);
+        }
+      );
 
-      // 2. Prepare conversation payload
-      const aiPayload: AIMessage[] = [
-        { role: 'system', content: systemPrompt },
-        ...messages.slice(-4).map(m => ({
-          role: m.sender === 'user' ? ('user' as const) : ('assistant' as const),
-          content: m.content,
-        })),
-        { role: 'user', content: query },
-      ];
-
-      // 3. Generate completion from provider
-      const responseText = await currentProvider.generateCompletion(aiPayload, {
-        model: selectedModel,
-        temperature: 0.7,
-      });
-
-      const librisMsg: LibrisChatMessage = {
-        id: `libris_${Date.now()}`,
+      const assistantMsg: LibrisChatMessage = {
+        id: `msg_libris_${Date.now()}`,
         sender: 'libris',
-        content: responseText,
-        sources: sources.length > 0 ? sources : undefined,
+        content: accumulatedResponse || 'Analysis completed with source citations.',
+        sources,
         timestamp: Date.now(),
       };
 
-      setMessages(prev => [...prev, librisMsg]);
+      setMessages(prev => [...prev, assistantMsg]);
     } catch (e: any) {
-      const errorMsg: LibrisChatMessage = {
-        id: `err_${Date.now()}`,
-        sender: 'libris',
-        content: `⚠️ Failed to get response from ${currentProvider.name}: ${e.message || 'Connection error'}. Please check if the local server is running.`,
-        timestamp: Date.now(),
-      };
-      setMessages(prev => [...prev, errorMsg]);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `msg_err_${Date.now()}`,
+          sender: 'libris',
+          content: `Unable to complete AI query: ${e.message || 'Endpoint connection failed'}. Check Settings > AI Providers.`,
+          timestamp: Date.now(),
+        },
+      ]);
     } finally {
-      setIsLoading(false);
+      setIsStreaming(false);
+      setStreamingContent('');
+      setStreamingSources([]);
     }
   };
 
-  const executeQuickTool = (tool: 'summarize' | 'flashcards' | 'study_guide' | 'key_points' | 'concept') => {
-    if (!activeDocument) {
-      if (tool === 'summarize') handleSendMessage('Summarize key themes across my library.');
-      else if (tool === 'flashcards') handleSendMessage('Generate 3 study flashcards from my library documents.');
-      else if (tool === 'study_guide') handleSendMessage('Generate an executive study guide of my library topics.');
-      else handleSendMessage('Explain the core concepts across my books.');
-      return;
-    }
-
-    if (tool === 'summarize') {
-      handleSendMessage(`Summarize the main arguments and conclusions of "${activeDocument.title}".`);
-    } else if (tool === 'flashcards') {
-      handleSendMessage(`Generate 3 high-yield study flashcards with front/back based on "${activeDocument.title}".`);
-    } else if (tool === 'study_guide') {
-      handleSendMessage(`Create a comprehensive study guide and outline for "${activeDocument.title}".`);
-    } else if (tool === 'key_points') {
-      handleSendMessage(`Extract the top 5 key actionable takeaways from "${activeDocument.title}".`);
-    } else {
-      handleSendMessage(`Explain the most complex concepts presented in "${activeDocument.title}" simply.`);
-    }
-  };
-
-  const toggleSource = (msgId: string) => {
-    setExpandedSources(prev => ({ ...prev, [msgId]: !prev[msgId] }));
-  };
+  const activeProvider = providers.find(p => p.id === activeProviderId);
 
   return (
-    <aside className="reader-sidebar" style={{ width: 380, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border-subtle)' }}>
-      {/* Libris Header */}
-      <div className="reader-sidebar-header" style={{ background: 'var(--bg-surface)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-          <div style={{ padding: 6, background: 'var(--brand-gradient)', borderRadius: 'var(--radius-sm)', color: '#fff', display: 'flex' }}>
-            <Sparkles size={16} />
-          </div>
+    <div
+      className="card card-elevated scifi-box"
+      style={{
+        width: 380,
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        borderRadius: 0,
+        borderLeft: '1px solid var(--border-strong)',
+        background: 'var(--bg-surface-elevated)',
+        zIndex: 50,
+      }}
+    >
+      {/* 1. Technical Header */}
+      <div
+        style={{
+          padding: '10px 14px',
+          borderBottom: '1px solid var(--border-subtle)',
+          background: 'var(--bg-surface)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Sparkles size={15} />
           <div>
-            <div style={{ fontWeight: 700, fontSize: 'var(--text-sm)' }}>LIBRIS AI</div>
-            <div style={{ fontSize: '0.68rem', color: currentProvider.isLocal ? 'var(--success)' : 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>
-              {currentProvider.isLocal ? <ShieldCheck size={11} /> : <ShieldAlert size={11} />}
-              {currentProvider.isLocal ? 'Local Private AI (Zero Telemetry)' : 'External Cloud AI'}
+            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.85rem', letterSpacing: '0.05em' }}>
+              LIBRIS // AI WORKSTATION
+            </div>
+            <div style={{ fontFamily: 'var(--font-tech)', fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+              {activeProvider?.isLocal ? '● LOCAL PRIVATE INFERENCE' : '○ REMOTE ENDPOINT'}
             </div>
           </div>
         </div>
 
-        <button className="btn-icon btn-sm" onClick={onClose} title="Close Libris">✕</button>
+        <button className="btn-icon btn-sm" onClick={onClose} title="Close Assistant">
+          ✕
+        </button>
       </div>
 
-      {/* Provider & Document Context Bar */}
-      <div style={{ padding: '8px 12px', background: 'var(--bg-input)', borderBottom: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--text-xs)' }}>
-          <div style={{ display: 'flex', gap: 4 }}>
-            <button
-              className={`badge ${providerType === 'ollama' ? 'badge-brand' : 'badge-cloud'}`}
-              style={{ cursor: 'pointer' }}
-              onClick={() => setProviderType('ollama')}
-            >
-              Ollama
-            </button>
-            <button
-              className={`badge ${providerType === 'lmstudio' ? 'badge-brand' : 'badge-cloud'}`}
-              style={{ cursor: 'pointer' }}
-              onClick={() => setProviderType('lmstudio')}
-            >
-              LM Studio
-            </button>
-            <button
-              className={`badge ${providerType === 'openai' ? 'badge-brand' : 'badge-cloud'}`}
-              style={{ cursor: 'pointer' }}
-              onClick={() => setProviderType('openai')}
-            >
-              OpenAI
-            </button>
-          </div>
-
+      {/* 2. Context & Provider Configuration Bar */}
+      <div
+        style={{
+          padding: '6px 12px',
+          background: 'var(--bg-input)',
+          borderBottom: '1px solid var(--border-subtle)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+          fontSize: 'var(--text-2xs)',
+        }}
+      >
+        {/* Context Selector */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-tech)' }}>CONTEXT:</span>
           <select
-            value={selectedModel}
-            onChange={e => setSelectedModel(e.target.value)}
-            style={{ fontSize: '0.72rem', padding: '2px 6px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}
+            value={selectedContextDocId}
+            onChange={e => setSelectedContextDocId(e.target.value)}
+            style={{ fontSize: 'var(--text-2xs)', padding: '2px 4px', maxWidth: '75%' }}
           >
-            {availableModels.map(m => (
-              <option key={m} value={m}>{m}</option>
+            <option value="library">[ Entire Library Index ]</option>
+            {allDocs.map(d => (
+              <option key={d.id} value={d.id}>
+                {d.title.length > 28 ? d.title.substring(0, 26) + '…' : d.title}
+              </option>
             ))}
           </select>
         </div>
 
-        {activeDocument && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: 'var(--brand-300)', background: 'rgba(99, 102, 241, 0.12)', padding: '3px 8px', borderRadius: 'var(--radius-xs)' }}>
-            <BookOpen size={12} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              Context: {activeDocument.title}
-            </span>
-          </div>
-        )}
+        {/* Provider Selector */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-tech)' }}>PROVIDER:</span>
+          <select
+            value={activeProviderId}
+            onChange={e => setActiveProviderId(e.target.value)}
+            style={{ fontSize: 'var(--text-2xs)', padding: '2px 4px', maxWidth: '75%' }}
+          >
+            {providers.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({p.modelName})
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      {/* Quick Action Pills */}
-      <div style={{ padding: '6px 12px', display: 'flex', gap: 4, overflowX: 'auto', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)' }}>
-        <button className="btn btn-sm btn-secondary" onClick={() => executeQuickTool('summarize')} style={{ fontSize: '0.7rem', padding: '3px 8px' }}>
-          ⚡ Summarize
+      {/* 3. Research Quick Action Chips */}
+      <div
+        style={{
+          padding: '6px 10px',
+          borderBottom: '1px solid var(--border-subtle)',
+          display: 'flex',
+          gap: 4,
+          overflowX: 'auto',
+          background: 'var(--bg-surface)',
+        }}
+      >
+        <button
+          className="btn btn-secondary btn-sm"
+          style={{ fontSize: '0.65rem', padding: '2px 6px' }}
+          onClick={() => handleSendMessage('Generate an executive summary of this document with key takeaways.')}
+        >
+          Summarize
         </button>
-        <button className="btn btn-sm btn-secondary" onClick={() => executeQuickTool('flashcards')} style={{ fontSize: '0.7rem', padding: '3px 8px' }}>
-          🗂️ Flashcards
+        <button
+          className="btn btn-secondary btn-sm"
+          style={{ fontSize: '0.65rem', padding: '2px 6px' }}
+          onClick={() => handleSendMessage('Extract 5 core concepts and provide study flashcards with Q&A.')}
+        >
+          Flashcards
         </button>
-        <button className="btn btn-sm btn-secondary" onClick={() => executeQuickTool('study_guide')} style={{ fontSize: '0.7rem', padding: '3px 8px' }}>
-          📚 Study Guide
-        </button>
-        <button className="btn btn-sm btn-secondary" onClick={() => executeQuickTool('key_points')} style={{ fontSize: '0.7rem', padding: '3px 8px' }}>
-          🎯 Key Points
+        <button
+          className="btn btn-secondary btn-sm"
+          style={{ fontSize: '0.65rem', padding: '2px 6px' }}
+          onClick={() => handleSendMessage('Create a structured study guide highlighting main arguments and architecture.')}
+        >
+          Study Guide
         </button>
       </div>
 
-      {/* Chat Messages */}
-      <div className="reader-sidebar-body" style={{ flex: 1, padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+      {/* 4. Chat Messages Scroll Area */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
         {messages.map(msg => (
           <div
             key={msg.id}
             style={{
               display: 'flex',
               flexDirection: 'column',
-              alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start',
+              alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
+              maxWidth: '92%',
             }}
           >
             <div
-              className="chat-message-content"
               style={{
-                maxWidth: '88%',
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-md)',
-                fontSize: 'var(--text-sm)',
+                fontSize: 'var(--text-2xs)',
+                fontFamily: 'var(--font-tech)',
+                color: 'var(--text-muted)',
+                marginBottom: 2,
+                textAlign: msg.sender === 'user' ? 'right' : 'left',
+              }}
+            >
+              {msg.sender === 'user' ? 'OPERATOR' : 'LIBRIS // RAG'}
+            </div>
+
+            <div
+              className="card"
+              style={{
+                padding: '8px 12px',
+                fontSize: 'var(--text-xs)',
                 lineHeight: 1.5,
-                background: msg.sender === 'user' ? 'var(--brand-500)' : 'var(--bg-surface)',
-                color: msg.sender === 'user' ? '#ffffff' : 'var(--text-primary)',
-                border: msg.sender === 'libris' ? '1px solid var(--border-subtle)' : 'none',
-                boxShadow: 'var(--shadow-sm)',
+                background: msg.sender === 'user' ? 'var(--btn-primary-bg)' : 'var(--bg-surface)',
+                color: msg.sender === 'user' ? 'var(--btn-primary-text)' : 'var(--text-primary)',
+                border: '1px solid var(--border-subtle)',
               }}
             >
               <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
 
-              {/* Source Citations Accordion */}
+              {/* Source Citations */}
               {msg.sources && msg.sources.length > 0 && (
-                <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid var(--border-subtle)', fontSize: '0.72rem' }}>
-                  <div
-                    onClick={() => toggleSource(msg.id)}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', color: 'var(--brand-300)', fontWeight: 600 }}
-                  >
-                    <span>📑 {msg.sources.length} Verified Sources Cited</span>
-                    {expandedSources[msg.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                  </div>
-
-                  {expandedSources[msg.id] && (
-                    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {msg.sources.map((s, idx) => (
-                        <div
-                          key={idx}
-                          style={{
-                            background: 'var(--bg-input)',
-                            padding: '6px 8px',
-                            borderRadius: 'var(--radius-xs)',
-                            border: '1px solid var(--border-subtle)',
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, color: 'var(--text-primary)' }}>
-                            <span>{s.documentTitle}</span>
-                            <span style={{ color: 'var(--brand-400)' }}>{s.pageOrLocation}</span>
-                          </div>
-                          <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', marginTop: 2 }}>
-                            "{s.snippet}"
-                          </div>
-                        </div>
-                      ))}
+                <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontFamily: 'var(--font-tech)', fontSize: '0.62rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    VERIFIED SOURCES:
+                  </span>
+                  {msg.sources.map((src, i) => (
+                    <div
+                      key={i}
+                      onClick={() => onNavigateToCitation?.(src.documentId, src.pageOrLocation)}
+                      style={{
+                        fontSize: '0.65rem',
+                        fontFamily: 'var(--font-tech)',
+                        padding: '3px 6px',
+                        background: 'var(--bg-input)',
+                        borderRadius: 2,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                      title="Click to jump to document excerpt"
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        [{i + 1}] {src.documentTitle} • {src.pageOrLocation}
+                      </span>
+                      <ExternalLink size={10} style={{ opacity: 0.6 }} />
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
             </div>
           </div>
         ))}
 
-        {isLoading && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 'var(--text-xs)', padding: '6px 12px' }}>
-            <Sparkles size={14} className="glow-brand" />
-            Libris is analyzing documents & synthesizing response...
+        {/* Live Streaming Message */}
+        {isStreaming && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignSelf: 'flex-start', maxWidth: '92%' }}>
+            <div style={{ fontSize: 'var(--text-2xs)', fontFamily: 'var(--font-tech)', color: 'var(--text-muted)', marginBottom: 2 }}>
+              LIBRIS // STREAMING...
+            </div>
+            <div className="card" style={{ padding: '8px 12px', fontSize: 'var(--text-xs)', background: 'var(--bg-surface)' }}>
+              <div style={{ whiteSpace: 'pre-wrap' }}>
+                {streamingContent}
+                <span className="terminal-cursor" />
+              </div>
+            </div>
           </div>
         )}
 
-        <div ref={chatEndRef} />
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Form */}
-      <form
-        onSubmit={e => {
-          e.preventDefault();
-          handleSendMessage();
-        }}
+      {/* 5. Input Area */}
+      <div
         style={{
           padding: 'var(--space-3)',
-          background: 'var(--bg-surface)',
           borderTop: '1px solid var(--border-subtle)',
+          background: 'var(--bg-surface)',
           display: 'flex',
-          gap: 'var(--space-2)',
+          gap: 6,
         }}
       >
         <input
           type="text"
-          placeholder={activeDocument ? `Ask Libris about ${activeDocument.title}...` : 'Ask Libris across your library...'}
+          placeholder="Ask Libris about documents..."
           value={inputQuery}
           onChange={e => setInputQuery(e.target.value)}
-          style={{ flex: 1, fontSize: 'var(--text-sm)' }}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSendMessage();
+            }
+          }}
+          disabled={isStreaming}
+          style={{ flex: 1, fontSize: 'var(--text-xs)', padding: '6px 10px' }}
         />
         <button
-          type="submit"
           className="btn btn-primary"
-          disabled={!inputQuery.trim() || isLoading}
-          style={{ padding: '0 12px' }}
+          onClick={() => handleSendMessage()}
+          disabled={!inputQuery.trim() || isStreaming}
+          style={{ padding: '6px 10px' }}
         >
-          <Send size={15} />
+          <Send size={13} />
         </button>
-      </form>
-    </aside>
+      </div>
+    </div>
   );
 };

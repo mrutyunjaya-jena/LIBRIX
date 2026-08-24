@@ -8,27 +8,24 @@ import {
   Link,
   Sparkles,
   Trash2,
+  Edit2,
+  ArrowLeft,
 } from 'lucide-react';
 import { Note } from '../../core/types';
 import { db } from '../../core/db/DatabaseEngine';
+import { MarkdownEditor } from '../../notes/MarkdownEditor';
 
 interface NotesListViewProps {
   notes: Note[];
-  onOpenNote: (note: Note) => void;
-  onCreateNote: () => void;
-  onCreateDailyNote: () => void;
-  onDeleteNote: (noteId: string) => void;
-  onOpenLibris: () => void;
+  onOpenNote?: (note: Note) => void;
+  onNotesUpdated: () => void;
 }
 
 export const NotesListView: React.FC<NotesListViewProps> = ({
   notes,
-  onOpenNote,
-  onCreateNote,
-  onCreateDailyNote,
-  onDeleteNote,
-  onOpenLibris,
+  onNotesUpdated,
 }) => {
+  const [activeNote, setActiveNote] = useState<Note | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
@@ -49,60 +46,147 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
     );
   }
 
+  const handleCreateNewNote = async () => {
+    const newNote: Note = {
+      id: `note_${Date.now()}`,
+      title: 'Untitled Note',
+      slug: 'untitled-note',
+      content: `# Untitled Note\n\nWrite your thoughts here. Connect to other ideas with [[Wikilinks]] and #tags.\n\n#Research`,
+      frontmatter: { title: 'Untitled Note', created: new Date().toISOString().slice(0, 10) },
+      tags: ['Research'],
+      wikilinks: [],
+      backlinks: [],
+      createdAt: Date.now(),
+      modifiedAt: Date.now(),
+    };
+    await db.saveNote(newNote);
+    onNotesUpdated();
+    setActiveNote(newNote);
+  };
+
+  const handleCreateDailyNote = async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const existing = notes.find(n => n.title === `Daily Note: ${today}`);
+    if (existing) {
+      setActiveNote(existing);
+      return;
+    }
+
+    const dailyNote: Note = {
+      id: `daily_${Date.now()}`,
+      title: `Daily Note: ${today}`,
+      slug: `daily-note-${today}`,
+      content: `# Daily Note: ${today}\n\n## Objectives\n- [ ] Review literature\n- [ ] Cross-link ideas with [[Universal Storage Architecture]]\n\n## Log & Reflections\n\n#DailyJournal`,
+      frontmatter: { title: `Daily Note: ${today}`, date: today, tags: ['DailyJournal'] },
+      tags: ['DailyJournal'],
+      wikilinks: ['Universal Storage Architecture'],
+      backlinks: [],
+      createdAt: Date.now(),
+      modifiedAt: Date.now(),
+    };
+    await db.saveNote(dailyNote);
+    onNotesUpdated();
+    setActiveNote(dailyNote);
+  };
+
+  const handleDeleteNote = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Delete this note permanently?')) {
+      await db.deleteNote(id);
+      if (activeNote?.id === id) setActiveNote(null);
+      onNotesUpdated();
+    }
+  };
+
+  // If a note is currently open in editor
+  if (activeNote) {
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        <div
+          style={{
+            height: 44,
+            padding: '0 var(--space-4)',
+            borderBottom: '1px solid var(--border-subtle)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'var(--bg-surface)',
+          }}
+        >
+          <button className="btn btn-ghost btn-sm" onClick={() => setActiveNote(null)}>
+            <ArrowLeft size={13} />
+            <span>Back to Notes</span>
+          </button>
+          <div style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', color: 'var(--text-muted)' }}>
+            OBSIDIAN-COMPATIBLE MARKDOWN VAULT
+          </div>
+        </div>
+        <MarkdownEditor
+          note={activeNote}
+          onSave={async updated => {
+            await db.saveNote(updated);
+            onNotesUpdated();
+            setActiveNote(updated);
+          }}
+          onClose={() => setActiveNote(null)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Header */}
       <div
         style={{
-          padding: 'var(--space-4) var(--space-6)',
+          padding: 'var(--space-3) var(--space-5)',
           borderBottom: '1px solid var(--border-subtle)',
           display: 'flex',
           flexDirection: 'column',
-          gap: 'var(--space-3)',
+          gap: 'var(--space-2)',
           background: 'var(--bg-app)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 800, color: 'var(--text-primary)' }}>
-              Notes & Knowledge Vault
-            </h1>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-              Obsidian-compatible Markdown files with live [[Wikilinks]], #tags, and bidirectional backlinks
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 700, letterSpacing: '0.04em' }}>
+              NOTES VAULT
+            </h2>
+            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+              Markdown knowledge vault with live [[Wikilinks]], #tags, and bidirectional backlinks.
             </p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            <button className="btn btn-secondary" onClick={onCreateDailyNote}>
-              <Calendar size={15} />
+            <button className="btn btn-secondary btn-sm" onClick={handleCreateDailyNote}>
+              <Calendar size={13} />
               <span>Daily Note</span>
             </button>
 
-            <button className="btn btn-primary" onClick={onCreateNote}>
-              <Plus size={16} />
+            <button className="btn btn-primary btn-sm" onClick={handleCreateNewNote}>
+              <Plus size={13} />
               <span>New Note</span>
             </button>
           </div>
         </div>
 
-        {/* Filter & Tags Bar */}
+        {/* Filter & Search Bar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-          <div className="input-with-icon" style={{ width: 260 }}>
-            <Search size={14} />
+          <div className="input-with-icon" style={{ width: 240 }}>
+            <Search size={13} />
             <input
               type="text"
               placeholder="Search notes content..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              style={{ fontSize: 'var(--text-xs)' }}
+              style={{ fontSize: 'var(--text-xs)', height: 30 }}
             />
           </div>
 
-          {/* Tag Pills */}
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {/* Tag Filter Pills */}
+          <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
             <button
-              className={`badge ${selectedTag === null ? 'badge-brand' : 'badge-cloud'}`}
-              style={{ cursor: 'pointer' }}
+              className={`btn btn-sm ${selectedTag === null ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setSelectedTag(null)}
             >
               All Tags
@@ -110,8 +194,7 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
             {allTags.map(tag => (
               <button
                 key={tag}
-                className={`badge ${selectedTag === tag ? 'badge-brand' : 'badge-cloud'}`}
-                style={{ cursor: 'pointer' }}
+                className={`btn btn-sm ${selectedTag === tag ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
               >
                 #{tag}
@@ -121,78 +204,74 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
         </div>
       </div>
 
-      {/* Notes List */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-6)' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 'var(--space-4)' }}>
-          {filtered.map(note => (
-            <div
-              key={note.id}
-              className="card card-interactive"
-              onClick={() => onOpenNote(note)}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                minHeight: 180,
-              }}
-            >
-              <div>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <h3 style={{ fontSize: 'var(--text-md)', fontWeight: 700, color: 'var(--text-primary)' }}>
+      {/* Notes Grid */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-5)' }}>
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 'var(--space-12)', color: 'var(--text-muted)' }}>
+            <FileText size={36} style={{ opacity: 0.3, marginBottom: 8 }} />
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-md)', fontWeight: 700 }}>
+              No notes found in vault
+            </div>
+            <div style={{ fontSize: 'var(--text-xs)', marginTop: 4 }}>
+              Create a new note or generate a daily journal.
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 'var(--space-4)' }}>
+            {filtered.map(note => (
+              <div
+                key={note.id}
+                className="card card-interactive scifi-box"
+                onClick={() => setActiveNote(note)}
+                style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', height: 180 }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <div style={{ fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
                     {note.title}
-                  </h3>
+                  </div>
                   <button
                     className="btn-icon btn-sm"
-                    onClick={e => {
-                      e.stopPropagation();
-                      onDeleteNote(note.id);
-                    }}
+                    onClick={e => handleDeleteNote(note.id, e)}
                     title="Delete Note"
                   >
-                    <Trash2 size={13} />
+                    <Trash2 size={12} />
                   </button>
                 </div>
 
+                {/* Excerpt */}
                 <p
                   style={{
                     fontSize: 'var(--text-xs)',
                     color: 'var(--text-secondary)',
-                    lineHeight: 1.5,
+                    lineHeight: 1.4,
+                    flex: 1,
                     display: '-webkit-box',
                     WebkitLineClamp: 3,
                     WebkitBoxOrient: 'vertical',
                     overflow: 'hidden',
-                    marginBottom: 12,
                   }}
                 >
-                  {note.content.replace(/^#+\s+/gm, '').replace(/\[\[(.*?)\]\]/g, '$1')}
+                  {note.content.replace(/^#+ .*\n/, '').trim()}
                 </p>
-              </div>
 
-              <div>
-                {/* Tags */}
-                {note.tags.length > 0 && (
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
-                    {note.tags.map(t => (
-                      <span key={t} className="badge badge-brand" style={{ fontSize: '0.65rem' }}>
-                        #{t}
-                      </span>
+                {/* Tags & Links */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 6, borderTop: '1px solid var(--border-subtle)', fontSize: 'var(--text-2xs)', fontFamily: 'var(--font-tech)' }}>
+                  <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                    {note.tags.slice(0, 2).map(t => (
+                      <span key={t} className="badge">#{t}</span>
                     ))}
                   </div>
-                )}
 
-                {/* Footer Metadata */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Link size={11} />
-                    <span>{note.wikilinks.length} links • {note.backlinks.length} backlinks</span>
-                  </div>
-                  <span>{new Date(note.modifiedAt).toLocaleDateString()}</span>
+                  {note.wikilinks.length > 0 && (
+                    <span style={{ color: 'var(--text-muted)' }}>
+                      {note.wikilinks.length} links
+                    </span>
+                  )}
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Sidebar, NavTab } from './Sidebar';
 import { Header } from './Header';
+import { Sidebar, NavTab } from './Sidebar';
 import { MobileNavigation } from './MobileNavigation';
 import { LibraryView } from '../library/LibraryView';
 import { NotesListView } from '../notes/NotesListView';
@@ -8,436 +8,315 @@ import { KnowledgeGraph } from '../../notes/KnowledgeGraph';
 import { CloudManagerView } from '../cloud/CloudManagerView';
 import { SettingsView } from '../settings/SettingsView';
 import { DocumentViewer } from '../../readers/DocumentViewer';
-import { MarkdownEditor } from '../../notes/MarkdownEditor';
 import { LibrisAssistant } from '../../ai/LibrisAssistant';
 import { CommandPalette } from '../palette/CommandPalette';
-import { FirstRunOnboarding } from '../onboarding/FirstRunOnboarding';
 import { DeleteSafetyModal } from '../library/DeleteSafetyModal';
-import { ConflictResolutionModal } from '../cloud/ConflictResolutionModal';
+import { FirstRunOnboarding } from '../onboarding/FirstRunOnboarding';
+import { Document, Folder, Note, CloudConnection } from '../../core/types';
 import { db } from '../../core/db/DatabaseEngine';
-import { Document, Note, Collection, CloudConnection, SyncConflict, KnowledgeGraphNode } from '../../core/types';
 import { usePlatform } from '../../platform/PlatformContext';
 
 export const AppShell: React.FC = () => {
   const platform = usePlatform();
 
-  // State
+  // Navigation & Theme
   const [activeTab, setActiveTab] = useState<NavTab>('library');
-  const [theme, setTheme] = useState<string>('dark');
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [cloudConnections, setCloudConnections] = useState<CloudConnection[]>([]);
-  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
-
-  // Active Readers & Editors
-  const [activeDocument, setActiveDocument] = useState<Document | null>(null);
-  const [activeNote, setActiveNote] = useState<Note | null>(null);
-
-  // Libris AI Drawer
-  const [isLibrisOpen, setIsLibrisOpen] = useState(false);
-  const [librisInitialQuery, setLibrisInitialQuery] = useState('');
-
-  // Modals
-  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [deleteCandidate, setDeleteCandidate] = useState<Document | null>(null);
-  const [activeConflict, setActiveConflict] = useState<SyncConflict | null>(null);
+  const [activeTheme, setActiveTheme] = useState<'dark' | 'light'>('dark');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
-  // Load Database Records on Startup
-  const refreshData = async () => {
+  // Entities State
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [clouds, setClouds] = useState<CloudConnection[]>([]);
+
+  // Reader & Modals
+  const [activeReadingDoc, setActiveReadingDoc] = useState<Document | null>(null);
+  const [showLibris, setShowLibris] = useState(false);
+  const [librisPassage, setLibrisPassage] = useState<string | undefined>(undefined);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [deleteTargetDoc, setDeleteTargetDoc] = useState<Document | null>(null);
+
+  // Initial Data Load
+  const reloadData = async () => {
     await db.initialize();
-    const docs = await db.getDocuments({ filterTrash: activeTab === 'trash', favoritesOnly: activeTab === 'favorites' });
-    const allNotes = await db.getNotes();
-    const cols = await db.getCollections();
-    const clouds = await db.getCloudConnections();
-    const conflicts = await db.getSyncConflicts();
+    const docs = await db.getDocuments();
+    const flds = await db.getFolders();
+    const nts = await db.getNotes();
+    const clds = await db.getCloudConnections();
 
     setDocuments(docs);
-    setNotes(allNotes);
-    setCollections(cols);
-    setCloudConnections(clouds);
-    if (conflicts.length > 0) {
-      setActiveConflict(conflicts[0]);
+    setFolders(flds);
+    setNotes(nts);
+    setClouds(clds);
+
+    // Check first-run onboarding
+    const onboarded = localStorage.getItem('librix_onboarded');
+    if (!onboarded) {
+      setShowOnboarding(true);
     }
   };
 
   useEffect(() => {
-    refreshData();
-    // Check first-run onboarding flag
-    const completed = localStorage.getItem('librix_onboarding_done');
-    if (!completed) {
-      setShowOnboarding(true);
-    }
-  }, [activeTab]);
+    reloadData();
+  }, []);
 
-  // Set Theme Class on Body
-  useEffect(() => {
-    document.body.className = `theme-${theme}`;
-  }, [theme]);
-
-  // Global Keyboard Shortcuts (Ctrl/Cmd + K, Escape, etc.)
+  // Keyboard Shortcuts (Ctrl+K for Command Palette)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setIsPaletteOpen(prev => !prev);
-      } else if ((e.metaKey || e.ctrlKey) && e.key === 'l') {
-        e.preventDefault();
-        setIsLibrisOpen(prev => !prev);
+        setShowCommandPalette(prev => !prev);
+      }
+      if (e.key === 'Escape') {
+        setShowCommandPalette(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Sync simulation
-  const handleTriggerSync = async () => {
-    setIsSyncing(true);
-    platform.notifications.show('Starting Multi-Cloud Sync', { body: 'Checking Google Drive, MEGA, Telegram, and TeraBox for updates.' });
-    setTimeout(async () => {
-      setIsSyncing(false);
-      await refreshData();
-      platform.notifications.show('Sync Complete', { body: 'All storage providers are up to date.' });
-    }, 1800);
+  // Theme Toggler
+  const toggleTheme = () => {
+    const next = activeTheme === 'dark' ? 'light' : 'dark';
+    setActiveTheme(next);
+    if (next === 'light') {
+      document.body.classList.remove('theme-dark');
+      document.body.classList.add('theme-light');
+    } else {
+      document.body.classList.remove('theme-light');
+      document.body.classList.add('theme-dark');
+    }
   };
 
-  // Favorite toggle
+  // Sync Trigger Simulation
+  const handleTriggerSync = async () => {
+    setIsSyncing(true);
+    await new Promise(r => setTimeout(r, 1200));
+    await reloadData();
+    setIsSyncing(false);
+  };
+
+  // Folder Actions
+  const handleCreateFolder = async (name: string, parentId: string | null) => {
+    const newFolder: Folder = {
+      id: `fld_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      name,
+      parentId,
+      path: parentId ? `/library/${parentId}/${name}` : `/${name}`,
+      createdAt: Date.now(),
+      modifiedAt: Date.now(),
+    };
+    await db.saveFolder(newFolder);
+    await reloadData();
+  };
+
+  const handleRenameFolder = async (folderId: string, newName: string) => {
+    await db.renameFolder(folderId, newName);
+    await reloadData();
+  };
+
+  const handleDeleteFolder = async (folderId: string) => {
+    if (confirm('Delete this folder and its subfolders? Documents inside will be moved to the root library.')) {
+      await db.deleteFolder(folderId);
+      if (selectedFolderId === folderId) setSelectedFolderId(null);
+      await reloadData();
+    }
+  };
+
+  // Document Actions
+  const handleRenameDocument = async (docId: string, newTitle: string, newFilename?: string) => {
+    await db.renameDocument(docId, newTitle, newFilename);
+    await reloadData();
+  };
+
+  const handleMoveDocumentToFolder = async (docId: string, folderId: string | null) => {
+    await db.moveDocumentToFolder(docId, folderId);
+    await reloadData();
+  };
+
+  const handleDuplicateDocument = async (docId: string) => {
+    await db.duplicateDocument(docId);
+    await reloadData();
+  };
+
   const handleToggleFavorite = async (doc: Document) => {
     doc.isFavorite = !doc.isFavorite;
     await db.saveDocument(doc);
-    await refreshData();
+    await reloadData();
   };
 
-  // Delete handling
-  const handleDeleteRequest = (doc: Document) => {
-    setDeleteCandidate(doc);
+  const handleConfirmDeleteDoc = async (docId: string, permanent: boolean) => {
+    await db.deleteDocument(docId, permanent);
+    setDeleteTargetDoc(null);
+    await reloadData();
   };
 
-  const handleConfirmMoveToTrash = async () => {
-    if (deleteCandidate) {
-      await db.deleteDocument(deleteCandidate.id, false);
-      setDeleteCandidate(null);
-      await refreshData();
-    }
-  };
-
-  const handleConfirmDeletePermanently = async () => {
-    if (deleteCandidate) {
-      await db.deleteDocument(deleteCandidate.id, true);
-      setDeleteCandidate(null);
-      await refreshData();
-    }
-  };
-
-  // Create new note
-  const handleCreateNote = async () => {
-    const newNote: Note = {
-      id: `note_${Date.now()}`,
-      title: 'Untitled Note',
-      slug: `untitled-note-${Date.now()}`,
-      content: `# Untitled Note\n\nWrite your thoughts here. Connect to other notes with [[Wikilinks]] and categorize with #tags.`,
-      frontmatter: {
-        title: 'Untitled Note',
-        created: new Date().toISOString().split('T')[0],
-        tags: [],
-      },
-      tags: [],
-      wikilinks: [],
-      backlinks: [],
-      createdAt: Date.now(),
-      modifiedAt: Date.now(),
-    };
-    await db.saveNote(newNote);
-    await refreshData();
-    setActiveNote(newNote);
-  };
-
-  // Create daily note
-  const handleCreateDailyNote = async () => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const existing = notes.find(n => n.title === todayStr || n.slug === todayStr);
-    if (existing) {
-      setActiveNote(existing);
-      return;
-    }
-
-    const dailyNote: Note = {
-      id: `daily_${Date.now()}`,
-      title: todayStr,
-      slug: todayStr,
-      content: `# Daily Note — ${todayStr}\n\n## 🎯 Today's Goals & Readings\n- [ ] Read 1 chapter from [[The Rust Programming Language]]\n- [ ] Explore [[Universal Storage Architecture]]\n\n## 📝 Notes & Reflections\n\n#DailyJournal #Reflections`,
-      frontmatter: {
-        title: todayStr,
-        type: 'daily-note',
-        date: todayStr,
-        tags: ['DailyJournal'],
-      },
-      tags: ['DailyJournal'],
-      wikilinks: ['The Rust Programming Language', 'Universal Storage Architecture'],
-      backlinks: [],
-      createdAt: Date.now(),
-      modifiedAt: Date.now(),
-    };
-    await db.saveNote(dailyNote);
-    await refreshData();
-    setActiveNote(dailyNote);
-  };
-
-  // Graph Node Click
-  const handleGraphNodeSelect = async (node: KnowledgeGraphNode) => {
-    if (node.type === 'note') {
-      const noteId = node.id.replace('note_', '');
-      const target = await db.getNoteById(noteId);
-      if (target) setActiveNote(target);
-    } else if (node.type === 'book') {
-      const docId = node.id.replace('doc_', '');
-      const target = await db.getDocumentById(docId);
-      if (target) setActiveDocument(target);
-    }
-  };
-
-  // Import documents
   const handleImportDocuments = async (newDocs: Partial<Document>[]) => {
-    for (const doc of newDocs) {
-      await db.saveDocument(doc as Document);
+    for (const d of newDocs) {
+      await db.saveDocument(d as Document);
     }
-    await refreshData();
-  };
-
-  // Create Collection
-  const handleCreateCollection = async () => {
-    const name = prompt('Enter Collection Name:');
-    if (name && name.trim()) {
-      const newCol: Collection = {
-        id: `col_${Date.now()}`,
-        name: name.trim(),
-        color: '#6366f1',
-        createdAt: Date.now(),
-      };
-      await db.saveCollection(newCol);
-      await refreshData();
-    }
+    await reloadData();
   };
 
   return (
-    <div style={{ display: 'flex', width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      {/* 1. Desktop Sidebar */}
-      {!platform.platform.isMobile && (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+      {/* 1. Header */}
+      <Header
+        onOpenCommandPalette={() => setShowCommandPalette(true)}
+        onOpenLibris={() => {
+          setLibrisPassage(undefined);
+          setShowLibris(true);
+        }}
+        activeTheme={activeTheme}
+        onToggleTheme={toggleTheme}
+        isSyncing={isSyncing}
+        onTriggerSync={handleTriggerSync}
+      />
+
+      {/* 2. Main Content Workspace */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* Desktop Sidebar */}
         <Sidebar
           activeTab={activeTab}
           onSelectTab={setActiveTab}
-          collections={collections}
-          selectedCollectionId={selectedCollectionId}
-          onSelectCollection={setSelectedCollectionId}
-          onCreateCollection={handleCreateCollection}
-          onOpenLibris={() => setIsLibrisOpen(true)}
-          documentCount={documents.length}
+          documentCount={documents.filter(d => !d.isTrash).length}
           noteCount={notes.length}
-        />
-      )}
-
-      {/* 2. Main Content Viewport */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
-        {/* Header */}
-        <Header
-          onOpenPalette={() => setIsPaletteOpen(true)}
-          onOpenLibris={() => setIsLibrisOpen(true)}
-          currentTheme={theme}
-          onToggleTheme={setTheme}
-          isSyncing={isSyncing}
-          onTriggerSync={handleTriggerSync}
+          cloudCount={clouds.filter(c => c.status === 'connected').length}
         />
 
-        {/* Tab Content Router */}
-        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
-          {(activeTab === 'library' || activeTab === 'favorites' || activeTab === 'trash') && (
+        {/* Tab Views */}
+        <main style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          {activeTab === 'library' && (
             <LibraryView
               documents={documents}
-              onOpenDocument={doc => setActiveDocument(doc)}
+              folders={folders}
+              selectedFolderId={selectedFolderId}
+              onSelectFolder={setSelectedFolderId}
+              onOpenDocument={doc => setActiveReadingDoc(doc)}
               onToggleFavorite={handleToggleFavorite}
-              onDeleteRequest={handleDeleteRequest}
+              onDeleteRequest={doc => setDeleteTargetDoc(doc)}
               onOpenLibris={doc => {
-                setActiveDocument(doc || null);
-                setIsLibrisOpen(true);
+                setShowLibris(true);
               }}
               onImportDocuments={handleImportDocuments}
-              activeCollectionTitle={
-                selectedCollectionId
-                  ? collections.find(c => c.id === selectedCollectionId)?.name
-                  : activeTab === 'favorites'
-                  ? 'Favorites'
-                  : activeTab === 'trash'
-                  ? 'Trash Safety'
-                  : 'Library'
-              }
+              onCreateFolder={handleCreateFolder}
+              onRenameFolder={handleRenameFolder}
+              onDeleteFolder={handleDeleteFolder}
+              onRenameDocument={handleRenameDocument}
+              onMoveDocumentToFolder={handleMoveDocumentToFolder}
+              onDuplicateDocument={handleDuplicateDocument}
             />
           )}
 
           {activeTab === 'notes' && (
             <NotesListView
               notes={notes}
-              onOpenNote={n => setActiveNote(n)}
-              onCreateNote={handleCreateNote}
-              onCreateDailyNote={handleCreateDailyNote}
-              onDeleteNote={async id => {
-                await db.deleteNote(id);
-                await refreshData();
+              onOpenNote={note => {
+                // Open note in editor
               }}
-              onOpenLibris={() => setIsLibrisOpen(true)}
+              onNotesUpdated={reloadData}
             />
           )}
 
           {activeTab === 'graph' && (
             <KnowledgeGraph
-              onSelectNode={handleGraphNodeSelect}
-              onOpenLibris={() => setIsLibrisOpen(true)}
+              onOpenDocument={async docId => {
+                const doc = await db.getDocumentById(docId);
+                if (doc) setActiveReadingDoc(doc);
+              }}
+              onOpenNote={noteId => {
+                setActiveTab('notes');
+              }}
             />
           )}
 
           {activeTab === 'cloud' && (
             <CloudManagerView
-              connections={cloudConnections}
-              onAddConnection={async conn => {
-                await db.saveCloudConnection(conn);
-                await refreshData();
-              }}
-              onRemoveConnection={async id => {
-                await db.deleteCloudConnection(id);
-                await refreshData();
-              }}
-              onTriggerSync={handleTriggerSync}
-              isSyncing={isSyncing}
+              connections={clouds}
+              onConnectionsUpdated={reloadData}
             />
           )}
 
           {activeTab === 'settings' && <SettingsView />}
+        </main>
 
-          {/* Libris AI Chat Drawer */}
-          {isLibrisOpen && (
-            <LibrisAssistant
-              activeDocument={activeDocument}
-              initialQuery={librisInitialQuery}
-              onClose={() => {
-                setIsLibrisOpen(false);
-                setLibrisInitialQuery('');
-              }}
-              onNavigateToDocument={async docId => {
-                const doc = await db.getDocumentById(docId);
-                if (doc) setActiveDocument(doc);
-              }}
-            />
-          )}
-        </div>
-
-        {/* 3. Mobile Bottom Navigation Bar */}
-        {platform.platform.isMobile && (
-          <MobileNavigation
-            activeTab={activeTab}
-            onSelectTab={setActiveTab}
-            onOpenLibris={() => setIsLibrisOpen(true)}
+        {/* Libris Assistant Drawer */}
+        {showLibris && (
+          <LibrisAssistant
+            currentDocument={activeReadingDoc}
+            selectedTextPassage={librisPassage}
+            onClose={() => setShowLibris(false)}
+            onNavigateToCitation={async docId => {
+              const doc = await db.getDocumentById(docId);
+              if (doc) setActiveReadingDoc(doc);
+            }}
           />
         )}
       </div>
 
+      {/* 3. Mobile Navigation Bar */}
+      <MobileNavigation activeTab={activeTab} onSelectTab={setActiveTab} />
+
       {/* 4. Fullscreen Document Reader Modal */}
-      {activeDocument && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 100 }}>
+      {activeReadingDoc && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1200 }}>
           <DocumentViewer
-            document={activeDocument}
-            onClose={() => setActiveDocument(null)}
-            onProgressUpdate={async (percent, loc) => {
-              await db.updateReadingProgress(activeDocument.id, { percentage: percent, currentLocation: loc });
+            document={activeReadingDoc}
+            onClose={() => setActiveReadingDoc(null)}
+            onProgressUpdate={async (percentage, location) => {
+              await db.updateReadingProgress(activeReadingDoc.id, { percentage, currentLocation: location });
+              await reloadData();
             }}
-            onOpenLibris={text => {
-              setLibrisInitialQuery(text || '');
-              setIsLibrisOpen(true);
-            }}
-            onNavigateWikilink={async targetTitle => {
-              const note = notes.find(n => n.title.toLowerCase() === targetTitle.toLowerCase());
-              if (note) {
-                setActiveDocument(null);
-                setActiveNote(note);
-              }
+            onOpenLibris={passage => {
+              setLibrisPassage(passage);
+              setShowLibris(true);
             }}
           />
         </div>
       )}
 
-      {/* 5. Fullscreen Markdown Note Editor Modal */}
-      {activeNote && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 100 }}>
-          <MarkdownEditor
-            note={activeNote}
-            onClose={() => setActiveNote(null)}
-            onSave={async updated => {
-              await db.saveNote(updated);
-              await refreshData();
-            }}
-            onNavigateNote={async idOrTitle => {
-              const target = notes.find(n => n.id === idOrTitle || n.title.toLowerCase() === idOrTitle.toLowerCase());
-              if (target) setActiveNote(target);
-            }}
-            onOpenLibris={contextText => {
-              setLibrisInitialQuery(contextText || '');
-              setIsLibrisOpen(true);
-            }}
-          />
-        </div>
-      )}
-
-      {/* 6. Command Palette (Ctrl/Cmd + K) */}
-      <CommandPalette
-        isOpen={isPaletteOpen}
-        onClose={() => setIsPaletteOpen(false)}
-        documents={documents}
-        notes={notes}
-        onOpenDocument={doc => setActiveDocument(doc)}
-        onOpenNote={note => setActiveNote(note)}
-        onCreateNote={handleCreateNote}
-        onCreateCollection={handleCreateCollection}
-        onOpenLibris={() => setIsLibrisOpen(true)}
-        onOpenCloudManager={() => setActiveTab('cloud')}
-        onOpenGraph={() => setActiveTab('graph')}
-        onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'sepia' : 'dark')}
-        onTriggerSync={handleTriggerSync}
-      />
-
-      {/* 7. First-Run Onboarding Modal */}
-      {showOnboarding && (
-        <FirstRunOnboarding
-          onComplete={() => {
-            localStorage.setItem('librix_onboarding_done', 'true');
-            setShowOnboarding(false);
+      {/* 5. Command Palette (Ctrl+K) */}
+      {showCommandPalette && (
+        <CommandPalette
+          documents={documents}
+          notes={notes}
+          onClose={() => setShowCommandPalette(false)}
+          onSelectDocument={doc => {
+            setActiveReadingDoc(doc);
+            setShowCommandPalette(false);
+          }}
+          onSelectNote={note => {
+            setActiveTab('notes');
+            setShowCommandPalette(false);
+          }}
+          onTriggerAction={action => {
+            if (action === 'new_note') setActiveTab('notes');
+            if (action === 'sync') handleTriggerSync();
+            if (action === 'libris') setShowLibris(true);
+            if (action === 'settings') setActiveTab('settings');
+            setShowCommandPalette(false);
           }}
         />
       )}
 
-      {/* 8. Delete Safety Modal */}
-      {deleteCandidate && (
+      {/* 6. Delete Safety Confirmation Modal */}
+      {deleteTargetDoc && (
         <DeleteSafetyModal
-          document={deleteCandidate}
-          onCancel={() => setDeleteCandidate(null)}
-          onMoveToTrash={handleConfirmMoveToTrash}
-          onDeletePermanently={handleConfirmDeletePermanently}
+          document={deleteTargetDoc}
+          onClose={() => setDeleteTargetDoc(null)}
+          onConfirm={handleConfirmDeleteDoc}
         />
       )}
 
-      {/* 9. Sync Conflict Modal */}
-      {activeConflict && (
-        <ConflictResolutionModal
-          conflict={activeConflict}
-          onCancel={() => setActiveConflict(null)}
-          onResolve={async resolution => {
-            if (resolution === 'copy') {
-              platform.notifications.show('Conflict Resolved', { body: 'Created a local conflicted copy.' });
-            } else if (resolution === 'local') {
-              platform.notifications.show('Conflict Resolved', { body: 'Local version kept.' });
-            } else {
-              platform.notifications.show('Conflict Resolved', { body: 'Cloud version kept.' });
-            }
-            setActiveConflict(null);
+      {/* 7. First-Run Welcome Wizard */}
+      {showOnboarding && (
+        <FirstRunOnboarding
+          onComplete={() => {
+            localStorage.setItem('librix_onboarded', 'true');
+            setShowOnboarding(false);
           }}
         />
       )}

@@ -1,5 +1,5 @@
 /**
- * LIBRIX Universal Core Types & Interfaces
+ * LIBRIX Universal Core Types & Interfaces — Sci-Fi Workstation Edition
  */
 
 export type DocumentFormat =
@@ -29,6 +29,15 @@ export type StorageProviderType =
   | 'telegram'
   | 'custom';
 
+export interface Folder {
+  id: string;
+  name: string;
+  parentId: string | null; // null represents root library folder
+  path: string;
+  createdAt: number;
+  modifiedAt: number;
+}
+
 export interface Document {
   id: string;
   title: string;
@@ -40,6 +49,7 @@ export interface Document {
   hash: string;
   storageProvider: StorageProviderType;
   storagePath: string;
+  folderId?: string | null;
   cloudFileId?: string;
   isFavorite: boolean;
   isTrash: boolean;
@@ -85,15 +95,17 @@ export interface Bookmark {
   createdAt: number;
 }
 
-export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink';
+export type HighlightStyle = 'underline' | 'box' | 'filled';
 
 export interface Annotation {
   id: string;
   documentId: string;
-  location: string;
-  highlightedText: string;
+  location: string; // chapter-1, page-4, etc.
+  startOffset?: number;
+  endOffset?: number;
+  selectedText: string;
   note?: string;
-  color: HighlightColor;
+  style?: HighlightStyle;
   createdAt: number;
   updatedAt: number;
 }
@@ -103,20 +115,24 @@ export interface Note {
   title: string;
   slug: string;
   content: string;
+  folderId?: string | null;
   frontmatter: Record<string, any>;
   tags: string[];
-  wikilinks: string[]; // Target note titles or ids
+  wikilinks: string[]; // Target note titles or book titles
   backlinks: string[]; // Source note ids
   createdAt: number;
   modifiedAt: number;
 }
 
+export type GraphNodeType = 'note' | 'book' | 'tag' | 'author' | 'topic' | 'folder';
+export type GraphNodeShape = 'circle' | 'diamond' | 'square' | 'hexagon';
+
 export interface KnowledgeGraphNode {
   id: string;
   label: string;
-  type: 'note' | 'book' | 'tag' | 'author' | 'collection';
+  type: GraphNodeType;
+  shape?: GraphNodeShape;
   val: number;
-  color?: string;
   x?: number;
   y?: number;
   vx?: number;
@@ -126,7 +142,7 @@ export interface KnowledgeGraphNode {
 export interface KnowledgeGraphLink {
   source: string;
   target: string;
-  type: 'wikilink' | 'tag' | 'author' | 'collection';
+  type: 'wikilink' | 'tag' | 'author' | 'folder';
 }
 
 export interface KnowledgeGraphData {
@@ -147,7 +163,7 @@ export interface CloudConnection {
   config: Record<string, any>;
 }
 
-export type SyncOperationType = 'upload' | 'download' | 'delete' | 'move';
+export type SyncOperationType = 'upload' | 'download' | 'delete' | 'move' | 'rename';
 export type SyncStatusType = 'pending' | 'syncing' | 'completed' | 'failed' | 'conflict';
 
 export interface SyncQueueItem {
@@ -214,9 +230,17 @@ export interface DocumentChunk {
   embedding?: number[];
 }
 
-export interface Flashcard {
+export interface CustomAIProviderConfig {
   id: string;
-  front: string;
-  back: string;
-  documentId?: string;
+  name: string;
+  baseUrl: string;
+  modelName: string;
+  apiKey?: string;
+  organization?: string;
+  projectId?: string;
+  customHeaders?: Record<string, string>;
+  temperature?: number;
+  maxTokens?: number;
+  isLocal: boolean;
+  isDefault?: boolean;
 }

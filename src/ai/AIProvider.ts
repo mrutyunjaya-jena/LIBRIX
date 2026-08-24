@@ -1,9 +1,10 @@
 /**
- * LIBRIX AI Provider Interfaces
- * Multi-provider abstraction supporting Local AI (Ollama, LM Studio, llama.cpp) and Cloud AI.
+ * LIBRIX AI Provider Interface & Generic Architecture
+ * Vendor-agnostic LLM client for local private inference (Ollama, LM Studio, llama.cpp)
+ * and custom remote endpoints with streaming and RAG retrieval.
  */
 
-export type AIProviderType = 'ollama' | 'openai-compatible' | 'openai' | 'custom';
+import { CustomAIProviderConfig } from '../core/types';
 
 export interface AIMessage {
   role: 'system' | 'user' | 'assistant';
@@ -11,19 +12,24 @@ export interface AIMessage {
 }
 
 export interface AICompletionOptions {
-  model?: string;
   temperature?: number;
   maxTokens?: number;
   stream?: boolean;
-  onChunk?: (text: string) => void;
+  onChunk?: (chunk: string) => void;
 }
 
 export interface IAIProvider {
   readonly id: string;
-  readonly type: AIProviderType;
   readonly name: string;
-  readonly isLocal: boolean; // True if execution stays strictly on user's device / LAN
+  readonly isLocal: boolean;
 
-  getAvailableModels(): Promise<string[]>;
+  connect(): Promise<boolean>;
+  testConnection(): Promise<{ success: boolean; message: string }>;
+  listModels?(): Promise<string[]>;
   generateCompletion(messages: AIMessage[], options?: AICompletionOptions): Promise<string>;
+  streamCompletion?(
+    messages: AIMessage[],
+    onChunk: (chunk: string) => void,
+    options?: AICompletionOptions
+  ): Promise<string>;
 }

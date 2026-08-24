@@ -1,11 +1,11 @@
 import React from 'react';
-import { BookOpen, FileText, Network, Cloud, Settings, Sparkles } from 'lucide-react';
+import { BookOpen, FileText, Share2, Cloud, Settings, Sparkles } from 'lucide-react';
 import { NavTab } from './Sidebar';
 
 interface MobileNavigationProps {
   activeTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
-  onOpenLibris: () => void;
+  onOpenLibris?: () => void;
 }
 
 export const MobileNavigation: React.FC<MobileNavigationProps> = ({
@@ -16,9 +16,9 @@ export const MobileNavigation: React.FC<MobileNavigationProps> = ({
   return (
     <nav
       style={{
-        height: 60,
+        height: 56,
         background: 'var(--bg-surface-elevated)',
-        borderTop: '1px solid var(--border-medium)',
+        borderTop: '1px solid var(--border-subtle)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-around',
@@ -34,11 +34,11 @@ export const MobileNavigation: React.FC<MobileNavigationProps> = ({
           flexDirection: 'column',
           alignItems: 'center',
           gap: 2,
-          color: activeTab === 'library' ? 'var(--brand-400)' : 'var(--text-muted)',
+          color: activeTab === 'library' ? 'var(--text-primary)' : 'var(--text-muted)',
           fontSize: '0.68rem',
         }}
       >
-        <BookOpen size={18} />
+        <BookOpen size={17} />
         <span>Library</span>
       </button>
 
@@ -50,33 +50,35 @@ export const MobileNavigation: React.FC<MobileNavigationProps> = ({
           flexDirection: 'column',
           alignItems: 'center',
           gap: 2,
-          color: activeTab === 'notes' ? 'var(--brand-400)' : 'var(--text-muted)',
+          color: activeTab === 'notes' ? 'var(--text-primary)' : 'var(--text-muted)',
           fontSize: '0.68rem',
         }}
       >
-        <FileText size={18} />
+        <FileText size={17} />
         <span>Notes</span>
       </button>
 
       {/* Floating Center Libris Trigger */}
-      <button
-        onClick={onOpenLibris}
-        style={{
-          width: 44,
-          height: 44,
-          borderRadius: '50%',
-          background: 'var(--brand-gradient)',
-          color: '#ffffff',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: 'var(--brand-glow)',
-          transform: 'translateY(-10px)',
-          border: '2px solid var(--bg-surface-elevated)',
-        }}
-      >
-        <Sparkles size={20} />
-      </button>
+      {onOpenLibris && (
+        <button
+          onClick={onOpenLibris}
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: '50%',
+            background: 'var(--btn-primary-bg)',
+            color: 'var(--btn-primary-text)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: 'var(--shadow-md)',
+            transform: 'translateY(-8px)',
+            border: '2px solid var(--bg-surface-elevated)',
+          }}
+        >
+          <Sparkles size={18} />
+        </button>
+      )}
 
       <button
         className="btn-ghost"
@@ -86,11 +88,11 @@ export const MobileNavigation: React.FC<MobileNavigationProps> = ({
           flexDirection: 'column',
           alignItems: 'center',
           gap: 2,
-          color: activeTab === 'graph' ? 'var(--brand-400)' : 'var(--text-muted)',
+          color: activeTab === 'graph' ? 'var(--text-primary)' : 'var(--text-muted)',
           fontSize: '0.68rem',
         }}
       >
-        <Network size={18} />
+        <Share2 size={17} />
         <span>Graph</span>
       </button>
 
@@ -102,11 +104,11 @@ export const MobileNavigation: React.FC<MobileNavigationProps> = ({
           flexDirection: 'column',
           alignItems: 'center',
           gap: 2,
-          color: activeTab === 'cloud' ? 'var(--brand-400)' : 'var(--text-muted)',
+          color: activeTab === 'cloud' ? 'var(--text-primary)' : 'var(--text-muted)',
           fontSize: '0.68rem',
         }}
       >
-        <Cloud size={18} />
+        <Cloud size={17} />
         <span>Clouds</span>
       </button>
     </nav>

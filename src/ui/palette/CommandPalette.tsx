@@ -9,113 +9,78 @@ import {
   Sun,
   RefreshCw,
   FolderPlus,
-  Network,
+  Share2,
   FileText,
+  Settings,
 } from 'lucide-react';
 import { Document, Note } from '../../core/types';
 
 interface CommandPaletteProps {
-  isOpen: boolean;
-  onClose: () => void;
   documents: Document[];
   notes: Note[];
-  onOpenDocument: (doc: Document) => void;
-  onOpenNote: (note: Note) => void;
-  onCreateNote: () => void;
-  onCreateCollection: () => void;
-  onOpenLibris: () => void;
-  onOpenCloudManager: () => void;
-  onOpenGraph: () => void;
-  onToggleTheme: () => void;
-  onTriggerSync: () => void;
+  onClose: () => void;
+  onSelectDocument: (doc: Document) => void;
+  onSelectNote: (note: Note) => void;
+  onTriggerAction: (action: string) => void;
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
-  isOpen,
-  onClose,
   documents,
   notes,
-  onOpenDocument,
-  onOpenNote,
-  onCreateNote,
-  onCreateCollection,
-  onOpenLibris,
-  onOpenCloudManager,
-  onOpenGraph,
-  onToggleTheme,
-  onTriggerSync,
+  onClose,
+  onSelectDocument,
+  onSelectNote,
+  onTriggerAction,
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 50);
-      setQuery('');
-      setSelectedIndex(0);
-    }
-  }, [isOpen]);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
 
-  if (!isOpen) return null;
-
-  // Static command items
+  // Base workstation actions
   const baseCommands = [
     {
       id: 'cmd-new-note',
       title: 'Create New Note',
-      category: 'Actions',
-      icon: <FilePlus size={16} />,
+      category: 'Notes Vault',
+      icon: <FilePlus size={14} />,
       shortcut: 'N',
-      run: () => { onCreateNote(); onClose(); },
+      run: () => onTriggerAction('new_note'),
     },
     {
       id: 'cmd-libris',
-      title: 'Ask Libris AI',
+      title: 'Ask Libris AI Research Assistant',
       category: 'AI Assistant',
-      icon: <Sparkles size={16} />,
+      icon: <Sparkles size={14} />,
       shortcut: 'L',
-      run: () => { onOpenLibris(); onClose(); },
+      run: () => onTriggerAction('libris'),
     },
     {
       id: 'cmd-graph',
       title: 'Open Knowledge Graph',
       category: 'Knowledge',
-      icon: <Network size={16} />,
+      icon: <Share2 size={14} />,
       shortcut: 'G',
-      run: () => { onOpenGraph(); onClose(); },
-    },
-    {
-      id: 'cmd-cloud',
-      title: 'Connect & Manage Cloud Storage',
-      category: 'Storage',
-      icon: <Cloud size={16} />,
-      shortcut: 'C',
-      run: () => { onOpenCloudManager(); onClose(); },
+      run: () => onTriggerAction('graph'),
     },
     {
       id: 'cmd-sync',
-      title: 'Start Global Storage Sync',
+      title: 'Sync All Storage Providers',
       category: 'Sync',
-      icon: <RefreshCw size={16} />,
+      icon: <RefreshCw size={14} />,
       shortcut: 'S',
-      run: () => { onTriggerSync(); onClose(); },
+      run: () => onTriggerAction('sync'),
     },
     {
-      id: 'cmd-theme',
-      title: 'Toggle Color Theme (Dark/Light/Sepia)',
-      category: 'Preferences',
-      icon: <Sun size={16} />,
-      shortcut: 'T',
-      run: () => { onToggleTheme(); onClose(); },
-    },
-    {
-      id: 'cmd-collection',
-      title: 'Create New Collection',
-      category: 'Organization',
-      icon: <FolderPlus size={16} />,
-      shortcut: 'Shift+C',
-      run: () => { onCreateCollection(); onClose(); },
+      id: 'cmd-settings',
+      title: 'Open Settings & AI Configuration',
+      category: 'Configuration',
+      icon: <Settings size={14} />,
+      shortcut: ',',
+      run: () => onTriggerAction('settings'),
     },
   ];
 
@@ -127,10 +92,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     .map(d => ({
       id: `doc-${d.id}`,
       title: d.title,
-      category: `Book (${d.format.toUpperCase()})`,
-      icon: <BookOpen size={16} />,
+      category: `Document (${d.format.toUpperCase()})`,
+      icon: <BookOpen size={14} />,
       shortcut: d.author,
-      run: () => { onOpenDocument(d); onClose(); },
+      run: () => onSelectDocument(d),
     }));
 
   const matchedNotes = notes
@@ -140,12 +105,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       id: `note-${n.id}`,
       title: n.title,
       category: 'Note',
-      icon: <FileText size={16} />,
+      icon: <FileText size={14} />,
       shortcut: n.tags.map(t => `#${t}`).join(' '),
-      run: () => { onOpenNote(n); onClose(); },
+      run: () => onSelectNote(n),
     }));
 
-  const matchedCommands = baseCommands.filter(c => c.title.toLowerCase().includes(q) || c.category.toLowerCase().includes(q));
+  const matchedCommands = baseCommands.filter(
+    c => c.title.toLowerCase().includes(q) || c.category.toLowerCase().includes(q)
+  );
 
   const allItems = [...matchedCommands, ...matchedDocs, ...matchedNotes];
 
@@ -171,7 +138,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       <div className="palette-container" onClick={e => e.stopPropagation()}>
         {/* Input */}
         <div className="palette-input-wrap">
-          <Search size={18} style={{ color: 'var(--text-muted)' }} />
+          <Search size={16} style={{ color: 'var(--text-muted)' }} />
           <input
             ref={inputRef}
             className="palette-input"
@@ -189,7 +156,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         {/* Results */}
         <div className="palette-results">
           {allItems.length === 0 ? (
-            <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+            <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-xs)' }}>
               No commands or documents found for "{query}"
             </div>
           ) : (
@@ -203,8 +170,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                   <div style={{ color: 'inherit' }}>{item.icon}</div>
                   <div>
-                    <div style={{ fontWeight: 500, fontSize: 'var(--text-sm)' }}>{item.title}</div>
-                    <div style={{ fontSize: 'var(--text-xs)', opacity: 0.7 }}>{item.category}</div>
+                    <div style={{ fontWeight: 600, fontSize: 'var(--text-xs)' }}>{item.title}</div>
+                    <div style={{ fontSize: 'var(--text-2xs)', color: 'var(--text-muted)' }}>{item.category}</div>
                   </div>
                 </div>
 

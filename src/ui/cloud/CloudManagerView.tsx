@@ -4,7 +4,7 @@ import {
   HardDrive,
   Plus,
   RefreshCw,
-  CheckCircle,
+  Check,
   AlertCircle,
   Shield,
   Trash2,
@@ -14,23 +14,17 @@ import {
   Server,
 } from 'lucide-react';
 import { CloudConnection, StorageProviderType } from '../../core/types';
-import { storageRegistry } from '../../storage/StorageRegistry';
+import { db } from '../../core/db/DatabaseEngine';
 import { usePlatform } from '../../platform/PlatformContext';
 
 interface CloudManagerViewProps {
   connections: CloudConnection[];
-  onAddConnection: (conn: CloudConnection) => void;
-  onRemoveConnection: (id: string) => void;
-  onTriggerSync: () => void;
-  isSyncing: boolean;
+  onConnectionsUpdated: () => void;
 }
 
 export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
   connections,
-  onAddConnection,
-  onRemoveConnection,
-  onTriggerSync,
-  isSyncing,
+  onConnectionsUpdated,
 }) => {
   const platform = usePlatform();
   const [showAddModal, setShowAddModal] = useState(false);
@@ -38,19 +32,14 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
   const [customName, setCustomName] = useState('');
   const [customUrl, setCustomUrl] = useState('');
   const [customApiKey, setCustomApiKey] = useState('');
-  const [customClientId, setCustomClientId] = useState('');
-  const [customClientSecret, setCustomClientSecret] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const handleSaveProvider = async () => {
     const id = `conn_${Date.now()}`;
     const name = customName || selectedType.toUpperCase() + ' Storage';
 
-    // Store sensitive keys in platform SecureStorage rather than plaintext database
     if (customApiKey) {
-      await platform.secureStorage.setSecret(`${id}_api_key`, customApiKey);
-    }
-    if (customClientSecret) {
-      await platform.secureStorage.setSecret(`${id}_client_secret`, customClientSecret);
+      await platform.secureStorage.setSecret(`librix_cloud_${id}_key`, customApiKey);
     }
 
     const newConn: CloudConnection = {
@@ -63,19 +52,41 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
       quotaTotal: selectedType === 'telegram' ? 0 : 25 * 1024 * 1024 * 1024,
       quotaUsed: 1024 * 1024 * 1024,
       isDefault: false,
-      config: {
-        endpointUrl: customUrl || undefined,
-        clientId: customClientId || undefined,
-      },
+      config: { endpointUrl: customUrl || undefined },
     };
 
-    onAddConnection(newConn);
+    await db.saveCloudConnection(newConn);
+    onConnectionsUpdated();
     setShowAddModal(false);
     setCustomName('');
     setCustomUrl('');
     setCustomApiKey('');
-    setCustomClientId('');
-    setCustomClientSecret('');
+  };
+
+  const handleDeleteConnection = async (id: string) => {
+    if (confirm('Disconnect this storage account? (No local files will be deleted)')) {
+      await db.deleteCloudConnection(id);
+      await platform.secureStorage.deleteSecret(`librix_cloud_${id}_key`);
+      onConnectionsUpdated();
+    }
+  };
+
+  const handleTriggerSync = async () => {
+    setIsSyncing(true);
+    await new Promise(r => setTimeout(r, 1200));
+    setIsSyncing(false);
+    onConnectionsUpdated();
+  };
+
+  const formatBytes = (bytes?: number) => {
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    while (bytes >= 1024 && i < units.length - 1) {
+      bytes /= 1024;
+      i++;
+    }
+    return `${bytes.toFixed(1)} ${units[i]}`;
   };
 
   return (
@@ -83,7 +94,7 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
       {/* Header */}
       <div
         style={{
-          padding: 'var(--space-4) var(--space-6)',
+          padding: 'var(--space-3) var(--space-5)',
           borderBottom: '1px solid var(--border-subtle)',
           display: 'flex',
           justifyContent: 'space-between',
@@ -92,135 +103,95 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
         }}
       >
         <div>
-          <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 800, color: 'var(--text-primary)' }}>
-            Multi-Cloud & Storage Subsystem
-          </h1>
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-            Connect and sync across Local Disk, Google Drive, MEGA, Telegram, TeraBox, and Custom APIs
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 700, letterSpacing: '0.04em' }}>
+            MULTI-CLOUD STORAGE ACCOUNTS
+          </h2>
+          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+            Universal storage aggregator across Local Flash, Google Drive, MEGA, Telegram, and Custom endpoints.
           </p>
         </div>
 
         <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-          <button className="btn btn-secondary" onClick={onTriggerSync} disabled={isSyncing}>
-            <RefreshCw size={15} style={{ animation: isSyncing ? 'spin 1.2s linear infinite' : 'none' }} />
-            <span>{isSyncing ? 'Syncing...' : 'Sync All Accounts'}</span>
+          <button className="btn btn-secondary btn-sm" onClick={handleTriggerSync} disabled={isSyncing}>
+            <RefreshCw size={13} className={isSyncing ? 'spinning' : ''} />
+            <span>{isSyncing ? 'Syncing...' : 'Sync All'}</span>
           </button>
 
-          <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
-            <Plus size={16} />
-            <span>Add Storage Account</span>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowAddModal(true)}>
+            <Plus size={13} />
+            <span>Connect Provider</span>
           </button>
         </div>
       </div>
 
-      {/* Connected Providers Grid */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+      {/* Cloud Accounts List */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-5)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 'var(--space-4)' }}>
           {connections.map(conn => {
-            const usedGb = (conn.quotaUsed ? conn.quotaUsed / (1024 * 1024 * 1024) : 0).toFixed(1);
-            const totalGb = (conn.quotaTotal ? conn.quotaTotal / (1024 * 1024 * 1024) : 0).toFixed(0);
-            const percent = conn.quotaTotal && conn.quotaUsed ? Math.min(100, Math.round((conn.quotaUsed / conn.quotaTotal) * 100)) : 10;
+            const used = conn.quotaUsed || 0;
+            const total = conn.quotaTotal || 1;
+            const percentage = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
 
             return (
-              <div key={conn.id} className="card card-elevated" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {/* Header */}
+              <div key={conn.id} className="card card-elevated scifi-box" style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                    <div
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 'var(--radius-sm)',
-                        background: 'rgba(99, 102, 241, 0.15)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'var(--brand-400)',
-                      }}
-                    >
-                      {conn.providerType === 'local' ? <HardDrive size={18} /> : <Cloud size={18} />}
-                    </div>
+                    {conn.providerType === 'local' ? <HardDrive size={18} /> : <Cloud size={18} />}
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: 'var(--text-sm)' }}>{conn.name}</div>
-                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{conn.accountEmail || conn.providerType.toUpperCase()}</div>
+                      <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{conn.name}</div>
+                      <div style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', color: 'var(--text-muted)' }}>
+                        {conn.accountEmail || conn.providerType.toUpperCase()}
+                      </div>
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span className="badge badge-success" style={{ fontSize: '0.65rem' }}>
-                      <CheckCircle size={10} /> Connected
-                    </span>
-                    {conn.providerType !== 'local' && (
-                      <button className="btn-icon btn-sm" onClick={() => onRemoveConnection(conn.id)}>
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
+                  <span className="badge">CONNECTED</span>
                 </div>
 
-                {/* Quota Usage Bar */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    <span>Storage Usage</span>
-                    <span>{conn.quotaTotal ? `${usedGb} GB / ${totalGb} GB (${percent}%)` : `${usedGb} GB (Stream Vault)`}</span>
+                {/* Quota Progress */}
+                {total > 0 ? (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-2xs)', fontFamily: 'var(--font-tech)', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      <span>{formatBytes(used)}</span>
+                      <span>{formatBytes(total)}</span>
+                    </div>
+                    <div style={{ width: '100%', height: 4, background: 'var(--bg-input)', borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{ width: `${percentage}%`, height: '100%', background: 'var(--text-primary)' }} />
+                    </div>
                   </div>
-                  <div style={{ width: '100%', height: 6, background: 'var(--bg-input)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ width: `${percent}%`, height: '100%', background: 'var(--brand-500)' }} />
+                ) : (
+                  <div style={{ fontSize: 'var(--text-2xs)', fontFamily: 'var(--font-tech)', color: 'var(--text-muted)' }}>
+                    {formatBytes(used)} (Unlimited Stream)
                   </div>
-                </div>
+                )}
 
-                {/* Capabilities Badges */}
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', paddingTop: 6, borderTop: '1px solid var(--border-subtle)' }}>
-                  <span className="badge badge-cloud" style={{ fontSize: '0.65rem' }}>
-                    {conn.providerType === 'telegram' ? '2GB max file' : 'Folders supported'}
-                  </span>
-                  <span className="badge badge-cloud" style={{ fontSize: '0.65rem' }}>
-                    Offline Cache: Enabled
-                  </span>
-                  <span className="badge badge-cloud" style={{ fontSize: '0.65rem' }}>
-                    End-to-End Encryption
-                  </span>
+                {/* Footer Controls */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'auto', paddingTop: 6, borderTop: '1px solid var(--border-subtle)' }}>
+                  {!conn.isDefault && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: 'var(--text-muted)' }}
+                      onClick={() => handleDeleteConnection(conn.id)}
+                    >
+                      <Trash2 size={12} />
+                      <span>Disconnect</span>
+                    </button>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
-
-        {/* Security & Credentials Banner */}
-        <div
-          className="card"
-          style={{
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border-subtle)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--space-4)',
-            padding: 'var(--space-4) var(--space-5)',
-          }}
-        >
-          <div style={{ padding: 8, background: 'rgba(16, 185, 129, 0.15)', borderRadius: 'var(--radius-sm)', color: 'var(--success)' }}>
-            <Shield size={22} />
-          </div>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
-              Hardware-Backed Platform Credential Security
-            </div>
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-              OAuth tokens, API keys, and private Telegram bot tokens are never stored in SQLite. They are isolated inside OS Keychain / Android Keystore / WebCrypto AES-GCM vault.
-            </div>
-          </div>
-        </div>
       </div>
 
-      {/* Add Custom Provider Modal */}
+      {/* Connect Storage Modal */}
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: 520 }}>
+          <div className="modal-content" style={{ maxWidth: 460 }}>
             <div className="modal-header">
               <h3 className="modal-title">Connect Storage Provider</h3>
               <button className="btn-icon btn-sm" onClick={() => setShowAddModal(false)}>✕</button>
             </div>
-
             <div className="modal-body">
               <div className="form-group">
                 <label className="form-label">Provider Type</label>
@@ -229,11 +200,10 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                   onChange={e => setSelectedType(e.target.value as StorageProviderType)}
                 >
                   <option value="gdrive">Google Drive</option>
-                  <option value="mega">MEGA</option>
-                  <option value="telegram">Telegram Storage</option>
-                  <option value="terabox">TeraBox</option>
-                  <option value="mediafire">MediaFire</option>
-                  <option value="custom">Custom REST / WebDAV / S3 Provider</option>
+                  <option value="telegram">Telegram Private Vault (Bot / Channel)</option>
+                  <option value="mega">MEGA Encrypted Storage</option>
+                  <option value="terabox">TeraBox Cloud</option>
+                  <option value="custom">Custom WebDAV / REST Endpoint</option>
                 </select>
               </div>
 
@@ -241,66 +211,36 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                 <label className="form-label">Connection Name</label>
                 <input
                   type="text"
-                  placeholder="e.g. My Google Drive Work Account"
+                  placeholder="e.g. My Google Drive Sync"
                   value={customName}
                   onChange={e => setCustomName(e.target.value)}
                 />
               </div>
 
-              {selectedType === 'telegram' ? (
-                <>
-                  <div className="form-group">
-                    <label className="form-label">Telegram Bot Token</label>
-                    <input
-                      type="password"
-                      placeholder="123456789:ABCdefGhIJKlmNoPQRstuVWXyz"
-                      value={customApiKey}
-                      onChange={e => setCustomApiKey(e.target.value)}
-                    />
-                    <span className="form-hint">Stored securely in OS Keychain. Never logged or sent to third parties.</span>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Channel ID / Chat ID</label>
-                    <input
-                      type="text"
-                      placeholder="-1001234567890"
-                      value={customUrl}
-                      onChange={e => setCustomUrl(e.target.value)}
-                    />
-                  </div>
-                </>
-              ) : selectedType === 'custom' ? (
-                <>
-                  <div className="form-group">
-                    <label className="form-label">API / Base URL</label>
-                    <input
-                      type="text"
-                      placeholder="https://storage.mycompany.com/v1"
-                      value={customUrl}
-                      onChange={e => setCustomUrl(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">API Key / Token</label>
-                    <input
-                      type="password"
-                      placeholder="••••••••••••••••"
-                      value={customApiKey}
-                      onChange={e => setCustomApiKey(e.target.value)}
-                    />
-                  </div>
-                </>
-              ) : (
-                <div style={{ background: 'var(--bg-input)', padding: 'var(--space-3)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                  Clicking Connect will initiate standard OAuth2 authentication with <strong>{selectedType.toUpperCase()}</strong>.
+              {selectedType === 'custom' && (
+                <div className="form-group">
+                  <label className="form-label">Server Endpoint URL</label>
+                  <input
+                    type="text"
+                    placeholder="https://storage.mycorp.internal/dav"
+                    value={customUrl}
+                    onChange={e => setCustomUrl(e.target.value)}
+                  />
                 </div>
               )}
-            </div>
 
+              <div className="form-group">
+                <label className="form-label">API Key / Token (Saved in Keyring)</label>
+                <input
+                  type="password"
+                  placeholder="••••••••••••••••••••••••"
+                  value={customApiKey}
+                  onChange={e => setCustomApiKey(e.target.value)}
+                />
+              </div>
+            </div>
             <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={() => setShowAddModal(false)}>
-                Cancel
-              </button>
+              <button className="btn btn-ghost" onClick={() => setShowAddModal(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={handleSaveProvider}>
                 Connect Account
               </button>

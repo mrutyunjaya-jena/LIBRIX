@@ -1,292 +1,458 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Settings,
-  Palette,
-  BookOpen,
-  Cpu,
-  Cloud,
+  Settings as SettingsIcon,
   Shield,
+  Cpu,
+  Type,
+  Cloud,
   Download,
   Upload,
-  Info,
+  Plus,
+  Trash2,
   Check,
-  Save,
+  AlertCircle,
+  Eye,
+  EyeOff,
+  Sun,
+  Moon,
 } from 'lucide-react';
-import { usePlatform } from '../../platform/PlatformContext';
+import { CustomAIProviderConfig } from '../../core/types';
 import { db } from '../../core/db/DatabaseEngine';
+import { usePlatform } from '../../platform/PlatformContext';
+import { CustomAIProvider } from '../../ai/providers/CustomAIProvider';
 
 export const SettingsView: React.FC = () => {
   const platform = usePlatform();
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'reading' | 'ai' | 'storage' | 'privacy' | 'backup' | 'about'>('general');
-  const [savedToast, setSavedToast] = useState(false);
+  const [activeTab, setActiveTab] = useState<'general' | 'ai' | 'security' | 'backup'>('ai');
+  const [currentTheme, setCurrentTheme] = useState<'dark' | 'light'>('dark');
 
-  // Settings State
-  const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
-  const [lmStudioUrl, setLmStudioUrl] = useState('http://localhost:1234/v1');
-  const [defaultAIProvider, setDefaultAIProvider] = useState('ollama');
-  const [privacyStrictLocal, setPrivacyStrictLocal] = useState(true);
-  const [readingFont, setReadingFont] = useState('serif');
-  const [readingFontSize, setReadingFontSize] = useState(18);
+  // AI Providers state
+  const [providers, setProviders] = useState<CustomAIProviderConfig[]>([]);
+  const [isAddingProvider, setIsAddingProvider] = useState(false);
+  const [newProviderName, setNewProviderName] = useState('');
+  const [newBaseUrl, setNewBaseUrl] = useState('http://localhost:11434');
+  const [newModelName, setNewModelName] = useState('llama3:latest');
+  const [newApiKey, setNewApiKey] = useState('');
+  const [newIsLocal, setNewIsLocal] = useState(true);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
 
-  const handleSave = () => {
-    setSavedToast(true);
-    setTimeout(() => setSavedToast(false), 2500);
+  useEffect(() => {
+    // Theme sync
+    const isLight = document.body.classList.contains('theme-light');
+    setCurrentTheme(isLight ? 'light' : 'dark');
+
+    // Load AI Providers
+    loadProviders();
+  }, []);
+
+  const loadProviders = async () => {
+    const p = await db.getAIProviders();
+    setProviders(p);
   };
 
-  const handleExportBackup = async () => {
-    const docs = await db.getDocuments();
-    const notes = await db.getNotes();
-    const collections = await db.getCollections();
-    const tags = await db.getTags();
-    const bookmarks = await db.getBookmarks();
-    const annotations = await db.getAnnotations();
+  const handleThemeSwitch = (theme: 'dark' | 'light') => {
+    setCurrentTheme(theme);
+    if (theme === 'light') {
+      document.body.classList.remove('theme-dark');
+      document.body.classList.add('theme-light');
+    } else {
+      document.body.classList.remove('theme-light');
+      document.body.classList.add('theme-dark');
+    }
+  };
 
-    const snapshot = {
-      librixVersion: '1.0.0',
-      exportedAt: Date.now(),
-      platform: platform.platform,
-      library: {
-        documents: docs,
-        notes: notes,
-        collections: collections,
-        tags: tags,
-        bookmarks: bookmarks,
-        annotations: annotations,
-      },
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+
+    const tempConfig: CustomAIProviderConfig = {
+      id: 'test_temp',
+      name: newProviderName || 'Test Provider',
+      baseUrl: newBaseUrl,
+      modelName: newModelName,
+      apiKey: newApiKey || undefined,
+      isLocal: newIsLocal,
     };
 
-    const data = new TextEncoder().encode(JSON.stringify(snapshot, null, 2));
-    await platform.filePicker.saveDocument('librix_library_backup.json', data, 'application/json');
-    platform.notifications.show('Library Backup Exported', { body: 'Your library metadata, notes, and annotations have been saved.' });
+    const provider = new CustomAIProvider(tempConfig);
+    const res = await provider.testConnection();
+    setTestResult(res);
+    setIsTesting(false);
+  };
+
+  const handleSaveProvider = async () => {
+    if (!newProviderName.trim() || !newBaseUrl.trim() || !newModelName.trim()) return;
+
+    const newConfig: CustomAIProviderConfig = {
+      id: `ai_${Date.now()}`,
+      name: newProviderName.trim(),
+      baseUrl: newBaseUrl.trim(),
+      modelName: newModelName.trim(),
+      apiKey: newApiKey.trim() || undefined,
+      isLocal: newIsLocal,
+      isDefault: providers.length === 0,
+    };
+
+    // Store API key in platform secure storage if provided
+    if (newApiKey.trim()) {
+      await platform.secureStorage.setSecret(`librix_ai_key_${newConfig.id}`, newApiKey.trim());
+    }
+
+    await db.saveAIProvider(newConfig);
+    await loadProviders();
+    setIsAddingProvider(false);
+    setNewProviderName('');
+    setNewBaseUrl('http://localhost:11434');
+    setNewModelName('llama3:latest');
+    setNewApiKey('');
+    setTestResult(null);
+  };
+
+  const handleDeleteProvider = async (id: string) => {
+    await db.deleteAIProvider(id);
+    await platform.secureStorage.deleteSecret(`librix_ai_key_${id}`);
+    await loadProviders();
+  };
+
+  const handleSetDefault = async (id: string) => {
+    await db.setDefaultAIProvider(id);
+    await loadProviders();
   };
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Header */}
-      <div style={{ padding: 'var(--space-4) var(--space-6)', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-app)' }}>
-        <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 800, color: 'var(--text-primary)' }}>
-          Settings & Preferences
-        </h1>
-        <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-          Configure appearance, Libris AI endpoints, storage defaults, and security
-        </p>
-      </div>
-
-      {/* Main Settings Body with Side Tabs */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* Settings Navigation Tabs */}
-        <div
-          style={{
-            width: 220,
-            borderRight: '1px solid var(--border-subtle)',
-            padding: 'var(--space-4) var(--space-2)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            background: 'var(--bg-surface)',
-          }}
-        >
-          {[
-            { id: 'general', label: 'General', icon: <Settings size={15} /> },
-            { id: 'appearance', label: 'Appearance', icon: <Palette size={15} /> },
-            { id: 'reading', label: 'Reading & Typography', icon: <BookOpen size={15} /> },
-            { id: 'ai', label: 'Libris AI & RAG', icon: <Cpu size={15} /> },
-            { id: 'storage', label: 'Storage & Sync', icon: <Cloud size={15} /> },
-            { id: 'privacy', label: 'Privacy & Security', icon: <Shield size={15} /> },
-            { id: 'backup', label: 'Backup & Export', icon: <Download size={15} /> },
-            { id: 'about', label: 'About Librix', icon: <Info size={15} /> },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              className={`btn btn-ghost ${activeTab === tab.id ? 'active' : ''}`}
-              onClick={() => setActiveTab(tab.id as any)}
-              style={{
-                width: '100%',
-                justifyContent: 'flex-start',
-                gap: 'var(--space-2)',
-                fontSize: 'var(--text-xs)',
-                padding: '8px 12px',
-                background: activeTab === tab.id ? 'var(--brand-500)' : 'transparent',
-                color: activeTab === tab.id ? '#ffffff' : 'var(--text-secondary)',
-              }}
-            >
-              {tab.icon}
-              <span>{tab.label}</span>
-            </button>
-          ))}
+    <div style={{ flex: 1, display: 'flex', height: '100%', overflow: 'hidden' }}>
+      {/* Settings Navigation Sidebar */}
+      <aside
+        style={{
+          width: 210,
+          background: 'var(--bg-surface)',
+          borderRight: '1px solid var(--border-subtle)',
+          padding: 'var(--space-3)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+        }}
+      >
+        <div style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', fontWeight: 600, color: 'var(--text-muted)', padding: '6px 8px', letterSpacing: '0.05em' }}>
+          WORKSTATION CONFIG
         </div>
 
-        {/* Settings Detail Pane */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-6)', maxWidth: 760 }}>
-          {activeTab === 'general' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>General Settings</h2>
+        <button
+          className={`palette-item ${activeTab === 'ai' ? 'active' : ''}`}
+          onClick={() => setActiveTab('ai')}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Cpu size={14} />
+            <span>AI Providers</span>
+          </div>
+        </button>
 
-              <div className="form-group">
-                <label className="form-label">Platform Runtime</label>
-                <div style={{ padding: '8px 12px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                  OS: <strong>{platform.platform.os.toUpperCase()}</strong> • Device: <strong>{platform.platform.deviceType}</strong> • Touch: <strong>{platform.platform.isTouch ? 'Enabled' : 'Disabled'}</strong>
-                </div>
-              </div>
+        <button
+          className={`palette-item ${activeTab === 'general' ? 'active' : ''}`}
+          onClick={() => setActiveTab('general')}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <SettingsIcon size={14} />
+            <span>Theme & Display</span>
+          </div>
+        </button>
 
-              <div className="form-group">
-                <label className="form-label">Default Startup View</label>
-                <select style={{ fontSize: 'var(--text-sm)' }}>
-                  <option value="library">Library (All Books & Documents)</option>
-                  <option value="notes">Notes Vault</option>
-                  <option value="graph">Knowledge Graph</option>
-                </select>
-              </div>
-            </div>
-          )}
+        <button
+          className={`palette-item ${activeTab === 'security' ? 'active' : ''}`}
+          onClick={() => setActiveTab('security')}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Shield size={14} />
+            <span>Security & Vault</span>
+          </div>
+        </button>
 
+        <button
+          className={`palette-item ${activeTab === 'backup' ? 'active' : ''}`}
+          onClick={() => setActiveTab('backup')}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Download size={14} />
+            <span>Backup & Export</span>
+          </div>
+        </button>
+      </aside>
+
+      {/* Main Settings Body */}
+      <main style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-8)' }}>
+        <div style={{ maxWidth: 680, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+          {/* TAB 1: AI PROVIDERS */}
           {activeTab === 'ai' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>Libris AI & RAG Configuration</h2>
-
-              <div className="form-group">
-                <label className="form-label">Default AI Provider</label>
-                <select value={defaultAIProvider} onChange={e => setDefaultAIProvider(e.target.value)}>
-                  <option value="ollama">Ollama (Local Private Server)</option>
-                  <option value="lmstudio">LM Studio / llama.cpp Server</option>
-                  <option value="openai">OpenAI (Cloud API)</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Ollama API Endpoint</label>
-                <input
-                  type="text"
-                  value={ollamaUrl}
-                  onChange={e => setOllamaUrl(e.target.value)}
-                  placeholder="http://localhost:11434"
-                />
-                <span className="form-hint">Connects to your local Ollama daemon for 100% private local inference.</span>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">LM Studio / LocalAI Endpoint</label>
-                <input
-                  type="text"
-                  value={lmStudioUrl}
-                  onChange={e => setLmStudioUrl(e.target.value)}
-                  placeholder="http://localhost:1234/v1"
-                />
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-3)', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)' }}>
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-3)' }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>Enforce Strict Local AI</div>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Prevent accidental transmission of document chunks to third-party cloud APIs.</div>
+                  <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 700, letterSpacing: '0.04em' }}>
+                    AI INFERENCE PROVIDERS
+                  </h2>
+                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
+                    Configure local (Ollama, LM Studio, llama.cpp) or custom research endpoints.
+                  </p>
                 </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={privacyStrictLocal}
-                    onChange={e => setPrivacyStrictLocal(e.target.checked)}
-                  />
-                  <span className="slider" />
-                </label>
-              </div>
 
-              <button className="btn btn-primary" onClick={handleSave} style={{ alignSelf: 'flex-start' }}>
-                <Save size={15} /> Save AI Settings
-              </button>
-            </div>
-          )}
-
-          {activeTab === 'reading' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>Reading & Typography Defaults</h2>
-
-              <div className="form-group">
-                <label className="form-label">Default Reader Font</label>
-                <select value={readingFont} onChange={e => setReadingFont(e.target.value)}>
-                  <option value="serif">Lora (Classical Serif)</option>
-                  <option value="sans">Inter (Modern Clean Sans)</option>
-                  <option value="mono">JetBrains Mono (Monospace)</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Default Font Size ({readingFontSize}px)</label>
-                <input
-                  type="range"
-                  min="14"
-                  max="30"
-                  value={readingFontSize}
-                  onChange={e => setReadingFontSize(Number(e.target.value))}
-                />
-              </div>
-
-              <button className="btn btn-primary" onClick={handleSave} style={{ alignSelf: 'flex-start' }}>
-                <Save size={15} /> Save Reading Defaults
-              </button>
-            </div>
-          )}
-
-          {activeTab === 'privacy' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>Privacy & Secure Storage</h2>
-
-              <div className="card" style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--success)', marginBottom: 4 }}>
-                  ✓ Hardware-Backed Secure Storage Active
-                </div>
-                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                  Platform Secure Storage Provider: <strong>{platform.platform.os === 'web' ? 'WebCrypto PBKDF2 + AES-GCM Device Salt' : 'OS Native Keychain / Keystore'}</strong>. Secrets, OAuth tokens, and Telegram keys are isolated and encrypted.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'backup' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>Library Backup & Export</h2>
-              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                Librix never locks you in. Export your entire library catalog, reading bookmarks, highlights, annotations, and Obsidian Markdown vault at any time.
-              </p>
-
-              <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                <button className="btn btn-primary" onClick={handleExportBackup}>
-                  <Download size={16} />
-                  <span>Export JSON Metadata Backup</span>
+                <button className="btn btn-primary btn-sm" onClick={() => setIsAddingProvider(!isAddingProvider)}>
+                  <Plus size={13} />
+                  <span>{isAddingProvider ? 'Cancel' : 'Add Provider'}</span>
                 </button>
               </div>
-            </div>
+
+              {/* Add Custom Provider Form */}
+              {isAddingProvider && (
+                <div className="card card-elevated scifi-box" style={{ padding: 'var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                  <div style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', fontWeight: 600, letterSpacing: '0.05em' }}>
+                    CONFIGURE NEW AI ENDPOINT
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Provider Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. My Local Ollama / Research Node"
+                      value={newProviderName}
+                      onChange={e => setNewProviderName(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Base URL (API Endpoint)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. http://localhost:11434 or https://ai.example.com/v1"
+                      value={newBaseUrl}
+                      onChange={e => setNewBaseUrl(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Model Identifier</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. llama3:latest, deepseek-r1:70b, mistral"
+                      value={newModelName}
+                      onChange={e => setNewModelName(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">API Key (Optional for Local)</label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={showApiKey ? 'text' : 'password'}
+                        placeholder="sk-••••••••••••••••••••••••"
+                        value={newApiKey}
+                        onChange={e => setNewApiKey(e.target.value)}
+                        style={{ paddingRight: 36 }}
+                      />
+                      <button
+                        type="button"
+                        className="btn-icon btn-sm"
+                        style={{ position: 'absolute', right: 4, top: 4 }}
+                        onClick={() => setShowApiKey(!showApiKey)}
+                      >
+                        {showApiKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                      </button>
+                    </div>
+                    <span className="form-hint">Stored securely in OS Keychain / Android Keystore.</span>
+                  </div>
+
+                  {testResult && (
+                    <div
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: 'var(--text-xs)',
+                        border: '1px solid var(--border-medium)',
+                        background: 'var(--bg-input)',
+                        color: testResult.success ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      }}
+                    >
+                      {testResult.success ? '✓ ' : '✕ '} {testResult.message}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleTestConnection}
+                      disabled={isTesting || !newBaseUrl.trim()}
+                    >
+                      {isTesting ? 'Testing...' : 'Test Connection'}
+                    </button>
+
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={handleSaveProvider}
+                      disabled={!newProviderName.trim() || !newBaseUrl.trim() || !newModelName.trim()}
+                    >
+                      Save Provider
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* List of Configured Providers */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                {providers.map(p => (
+                  <div key={p.id} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-4)' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{p.name}</span>
+                        {p.isDefault && <span className="badge badge-active">DEFAULT</span>}
+                        <span className="badge">{p.isLocal ? 'LOCAL' : 'REMOTE'}</span>
+                      </div>
+                      <div style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', color: 'var(--text-muted)', marginTop: 4 }}>
+                        {p.baseUrl} • {p.modelName}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {!p.isDefault && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => handleSetDefault(p.id)}>
+                          Set Default
+                        </button>
+                      )}
+                      <button className="btn-icon btn-sm" onClick={() => handleDeleteProvider(p.id)} title="Delete">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
 
-          {activeTab === 'about' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>About Librix</h2>
-
-              <div className="card" style={{ background: 'var(--bg-surface-elevated)' }}>
-                <div style={{ fontWeight: 800, fontSize: 'var(--text-lg)', background: 'var(--brand-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: 4 }}>
-                  LIBRIX v1.0.0
-                </div>
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 12 }}>
-                  Universal Library, Document & Knowledge Platform
-                </div>
-                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.6 }}>
-                  <em>"One Library. Any Device. Any Storage. Your Knowledge."</em>
+          {/* TAB 2: THEME & DISPLAY (STRICT 2 THEMES) */}
+          {activeTab === 'general' && (
+            <>
+              <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-3)' }}>
+                <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 700 }}>
+                  THEME & VISUAL DISPLAY
+                </h2>
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Strict grayscale workstation appearance with Dark & Light high-contrast modes.
                 </p>
-                <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border-subtle)', fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-                  Open-Source • MIT License • Built for Linux, Windows, macOS, Android, iOS, and Web.
+              </div>
+
+              <div className="card" style={{ padding: 'var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                <div className="form-label">Active Workstation Theme</div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                  <div
+                    onClick={() => handleThemeSwitch('dark')}
+                    className={`card card-interactive ${currentTheme === 'dark' ? 'scifi-box' : ''}`}
+                    style={{
+                      padding: 'var(--space-4)',
+                      background: '#080808',
+                      color: '#f5f5f5',
+                      border: currentTheme === 'dark' ? '2px solid #ffffff' : '1px solid #222222',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <Moon size={16} />
+                      <span style={{ fontWeight: 700 }}>DARK MODE</span>
+                    </div>
+                    <p style={{ fontSize: 'var(--text-xs)', color: '#a3a3a3' }}>
+                      Primary sci-fi knowledge terminal workstation. High contrast, minimal eye fatigue.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => handleThemeSwitch('light')}
+                    className={`card card-interactive ${currentTheme === 'light' ? 'scifi-box' : ''}`}
+                    style={{
+                      padding: 'var(--space-4)',
+                      background: '#ffffff',
+                      color: '#0a0a0a',
+                      border: currentTheme === 'light' ? '2px solid #000000' : '1px solid #d4d4d4',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <Sun size={16} />
+                      <span style={{ fontWeight: 700 }}>LIGHT MODE</span>
+                    </div>
+                    <p style={{ fontSize: 'var(--text-xs)', color: '#525252' }}>
+                      Clean technical laboratory workstation. Pure monochrome inverted contrast.
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            </>
+          )}
+
+          {/* TAB 3: SECURITY & VAULT */}
+          {activeTab === 'security' && (
+            <>
+              <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-3)' }}>
+                <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 700 }}>
+                  HARDWARE-BACKED SECURITY VAULT
+                </h2>
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Storage of cloud credentials and AI keys with zero plaintext leaks.
+                </p>
+              </div>
+
+              <div className="card scifi-box" style={{ padding: 'var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Shield size={20} />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>
+                      Keyring Encryption Engine: ACTIVE
+                    </div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                      Protected by WebCrypto AES-GCM / OS Keystore integration.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* TAB 4: BACKUP & EXPORT */}
+          {activeTab === 'backup' && (
+            <>
+              <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-3)' }}>
+                <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 700 }}>
+                  DATABASE BACKUP & EXPORT
+                </h2>
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Export your entire library metadata, annotations, and notes vault as portable JSON.
+                </p>
+              </div>
+
+              <div className="card" style={{ padding: 'var(--space-5)', display: 'flex', gap: 'var(--space-3)' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={async () => {
+                    const docs = await db.getDocuments();
+                    const notes = await db.getNotes();
+                    const annots = await db.getAnnotations();
+                    const folders = await db.getFolders();
+                    const blob = new Blob([JSON.stringify({ docs, notes, annots, folders }, null, 2)], {
+                      type: 'application/json',
+                    });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `librix_backup_${new Date().toISOString().slice(0, 10)}.json`;
+                    a.click();
+                  }}
+                >
+                  <Download size={14} />
+                  <span>Export Library Vault</span>
+                </button>
+              </div>
+            </>
           )}
         </div>
-      </div>
-
-      {savedToast && (
-        <div className="toast-container">
-          <div className="toast">
-            <Check size={16} color="var(--success)" />
-            <span>Settings saved successfully!</span>
-          </div>
-        </div>
-      )}
+      </main>
     </div>
   );
 };

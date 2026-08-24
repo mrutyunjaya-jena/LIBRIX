@@ -1,20 +1,19 @@
-import { Document, HighlightColor } from '../core/types';
+import { Document, HighlightStyle } from '../core/types';
 
 export type ReaderTheme = 'dark' | 'light' | 'sepia' | 'high-contrast';
-export type ReaderFontFamily = 'serif' | 'sans' | 'mono' | 'dyslexic';
+export type ReaderFontFamily = 'serif' | 'sans' | 'mono';
 export type ReaderScrollMode = 'paginated' | 'continuous';
-export type ReaderTextAlign = 'left' | 'justify';
 
 export interface ReaderSettings {
   theme: ReaderTheme;
   fontFamily: ReaderFontFamily;
-  fontSize: number; // 14 to 32px
-  lineHeight: number; // 1.2 to 2.4
-  letterSpacing: number; // -0.05 to 0.1em
-  marginHorizontal: number; // 12 to 96px
+  fontSize: number; // in px
+  lineHeight: number;
+  letterSpacing: number;
+  marginHorizontal: number;
   scrollMode: ReaderScrollMode;
-  textAlign: ReaderTextAlign;
-  brightness: number;
+  textAlign: 'left' | 'justify';
+  brightness: number; // 0 - 100
 }
 
 export interface TocItem {
@@ -28,5 +27,5 @@ export interface IReaderProps {
   document: Document;
   onClose: () => void;
   onProgressUpdate: (percentage: number, location: string) => void;
-  onOpenLibris?: (selectedText?: string) => void;
+  onOpenLibris?: (passage?: string) => void;
 }

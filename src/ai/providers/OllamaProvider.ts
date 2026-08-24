@@ -1,8 +1,7 @@
-import { IAIProvider, AIProviderType, AIMessage, AICompletionOptions } from '../AIProvider';
+import { IAIProvider, AIMessage, AICompletionOptions } from '../AIProvider';
 
 export class OllamaProvider implements IAIProvider {
   readonly id = 'ollama';
-  readonly type: AIProviderType = 'ollama';
   readonly name = 'Ollama (Local Private AI)';
   readonly isLocal = true;
   private endpointUrl: string;
@@ -11,28 +10,43 @@ export class OllamaProvider implements IAIProvider {
     this.endpointUrl = endpointUrl;
   }
 
-  async getAvailableModels(): Promise<string[]> {
+  async connect(): Promise<boolean> {
+    const res = await this.testConnection();
+    return res.success;
+  }
+
+  async testConnection(): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await fetch(`${this.endpointUrl}/api/tags`);
+      if (res.ok) {
+        return { success: true, message: 'Connected to local Ollama daemon' };
+      }
+    } catch (e: any) {
+      return { success: false, message: `Could not connect to Ollama at ${this.endpointUrl}: ${e.message}` };
+    }
+    return { success: false, message: 'Ollama daemon unreachable' };
+  }
+
+  async listModels(): Promise<string[]> {
     try {
       const res = await fetch(`${this.endpointUrl}/api/tags`);
       if (res.ok) {
         const data = await res.json();
-        return data.models?.map((m: any) => m.name) || ['llama3:latest', 'mistral', 'phi3', 'qwen2.5:7b'];
+        return data.models?.map((m: any) => m.name) || ['llama3:latest', 'mistral', 'phi3'];
       }
     } catch {
-      // Return default list if local daemon is currently offline
+      // fallback
     }
     return ['llama3:latest', 'mistral:latest', 'phi3:mini', 'deepseek-r1:8b', 'qwen2.5:7b'];
   }
 
   async generateCompletion(messages: AIMessage[], options?: AICompletionOptions): Promise<string> {
-    const model = options?.model || 'llama3:latest';
-
     try {
       const res = await fetch(`${this.endpointUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model,
+          model: 'llama3:latest',
           messages,
           stream: false,
           options: {
@@ -47,10 +61,9 @@ export class OllamaProvider implements IAIProvider {
         return data.message?.content || '';
       }
     } catch {
-      // Fall back to built-in simulation response when offline local server is not actively running
+      // fallback
     }
 
-    // Built-in intelligent fallback simulation for offline demonstrations
     return this.simulateLibrisResponse(messages);
   }
 
@@ -69,6 +82,6 @@ export class OllamaProvider implements IAIProvider {
       return `### 📚 Study Guide & Concepts\n\n#### Key Themes\n- **Decentralized Storage**: Managing files across heterogeneous providers while maintaining one unified catalog.\n- **Document RAG**: Retrieving paragraph-level citations rather than sending entire documents to external endpoints.\n- **Graph Synthesis**: Connecting notes to cited books.`;
     }
 
-    return `Based on your library documents, **Librix** enforces privacy-first knowledge workflows. Documents are stored in your configured storage (Local, Google Drive, MEGA, or Telegram), while **Libris** processes queries locally via Ollama embeddings and TF-IDF semantic search.`;
+    return `Based on your library documents, **Librix** enforces privacy-first knowledge workflows. Documents are stored in your configured storage, while **Libris** processes queries locally via Ollama embeddings and TF-IDF semantic search.`;
   }
 }

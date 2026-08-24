@@ -6,16 +6,20 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCw,
-  Search,
   Sparkles,
   Bookmark as BookmarkIcon,
   Highlighter,
   LayoutGrid,
   FileText,
+  Trash2,
+  Edit3,
+  Copy,
+  MessageSquare,
 } from 'lucide-react';
 import { IReaderProps } from './ReaderInterface';
 import { db } from '../core/db/DatabaseEngine';
-import { Bookmark, Annotation, HighlightColor } from '../core/types';
+import { Bookmark, Annotation, HighlightStyle } from '../core/types';
+import { usePlatform } from '../platform/PlatformContext';
 
 export const PdfReader: React.FC<IReaderProps> = ({
   document,
@@ -23,13 +27,13 @@ export const PdfReader: React.FC<IReaderProps> = ({
   onProgressUpdate,
   onOpenLibris,
 }) => {
+  const platform = usePlatform();
   const [currentPage, setCurrentPage] = useState(1);
-  const totalPages = 24; // Simulated 24-page academic PDF
+  const totalPages = 24;
   const [zoom, setZoom] = useState(100);
   const [rotation, setRotation] = useState(0);
   const [showThumbnails, setShowThumbnails] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [showAnnotations, setShowAnnotations] = useState(false);
   const [selectedText, setSelectedText] = useState('');
   const [selectionPos, setSelectionPos] = useState<{ x: number; y: number } | null>(null);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
@@ -59,12 +63,13 @@ export const PdfReader: React.FC<IReaderProps> = ({
     },
   ];
 
+  const loadData = async () => {
+    setBookmarks(await db.getBookmarks(document.id));
+    setAnnotations(await db.getAnnotations(document.id));
+  };
+
   useEffect(() => {
-    const load = async () => {
-      setBookmarks(await db.getBookmarks(document.id));
-      setAnnotations(await db.getAnnotations(document.id));
-    };
-    load();
+    loadData();
   }, [document.id]);
 
   useEffect(() => {
@@ -85,21 +90,28 @@ export const PdfReader: React.FC<IReaderProps> = ({
     }
   };
 
-  const createHighlight = async (color: HighlightColor) => {
+  const createHighlight = async (style: HighlightStyle = 'box', noteText?: string) => {
     if (!selectedText) return;
     const annot: Annotation = {
-      id: `pdf_annot_${Date.now()}`,
+      id: `pdf_annot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       documentId: document.id,
       location: `page-${currentPage}`,
-      highlightedText: selectedText,
-      color,
+      selectedText,
+      note: noteText || undefined,
+      style,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
     await db.saveAnnotation(annot);
-    setAnnotations([annot, ...annotations]);
+    await loadData();
     setSelectionPos(null);
     setSelectedText('');
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const deleteHighlight = async (id: string) => {
+    await db.deleteAnnotation(id);
+    await loadData();
   };
 
   const isBookmarked = bookmarks.some(b => b.location === `page-${currentPage}`);
@@ -131,24 +143,58 @@ export const PdfReader: React.FC<IReaderProps> = ({
     text: `Page ${currentPage} content stream. Librix provides high-performance document rendering and offline local vector indexing for instant full-text analysis.`,
   };
 
+  // Render highlighted text in page
+  const renderHighlightedPageText = (rawText: string) => {
+    let rendered = rawText;
+    const pageLocation = `page-${currentPage}`;
+    const pageAnnots = annotations.filter(a => a.location === pageLocation);
+
+    for (const a of pageAnnots) {
+      if (a.selectedText && a.selectedText.length > 2) {
+        const safeRegex = a.selectedText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`(${safeRegex})`, 'gi');
+        rendered = rendered.replace(regex, `<mark class="scifi-highlight" title="${a.note ? 'Note: ' + a.note : 'Highlight'}">$1</mark>`);
+      }
+    }
+    return <span dangerouslySetInnerHTML={{ __html: rendered }} />;
+  };
+
   return (
-    <div className="reader-container theme-dark" onMouseUp={handleMouseUp}>
+    <div className="reader-container" onMouseUp={handleMouseUp}>
       {/* Floating Selection Toolbar */}
       {selectionPos && (
         <div
           className="selection-toolbar"
           style={{ left: `${selectionPos.x}px`, top: `${selectionPos.y}px`, transform: 'translateX(-50%)' }}
         >
-          <button className="btn-icon" onClick={() => createHighlight('yellow')} title="Yellow">
-            <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#eab308' }} />
+          <button className="btn btn-sm btn-secondary" onClick={() => createHighlight('box')}>
+            <Highlighter size={13} />
+            <span>Highlight</span>
           </button>
-          <button className="btn-icon" onClick={() => createHighlight('green')} title="Green">
-            <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#22c55e' }} />
+
+          <button
+            className="btn btn-sm btn-secondary"
+            onClick={() => {
+              const note = prompt('Add note to highlight:');
+              if (note !== null) {
+                createHighlight('box', note);
+              }
+            }}
+          >
+            <MessageSquare size={13} />
+            <span>Note</span>
           </button>
-          <button className="btn-icon" onClick={() => createHighlight('blue')} title="Blue">
-            <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#3b82f6' }} />
+
+          <button
+            className="btn btn-sm btn-secondary"
+            onClick={async () => {
+              await platform.clipboard.copyText(selectedText);
+              setSelectionPos(null);
+            }}
+          >
+            <Copy size={13} />
           </button>
-          <div style={{ width: 1, height: 16, background: 'var(--border-medium)', margin: '0 4px' }} />
+
           {onOpenLibris && (
             <button
               className="btn btn-sm btn-primary"
@@ -158,7 +204,7 @@ export const PdfReader: React.FC<IReaderProps> = ({
               }}
             >
               <Sparkles size={13} />
-              Ask Libris
+              <span>Ask Libris</span>
             </button>
           )}
         </div>
@@ -166,53 +212,68 @@ export const PdfReader: React.FC<IReaderProps> = ({
 
       {/* PDF Header Controls */}
       <header className="reader-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-          <button className="btn-icon" onClick={onClose} title="Back">
-            <ArrowLeft size={18} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <button className="btn-icon btn-sm" onClick={onClose} title="Back">
+            <ArrowLeft size={16} />
           </button>
           <div className="reader-title-area">
             <div className="reader-doc-title">{document.title}</div>
-            <div className="reader-chapter-title">Page {currentPage} of {totalPages}</div>
+            <div className="reader-chapter-title">PAGE {currentPage} / {totalPages}</div>
           </div>
         </div>
 
-        {/* Center Zoom & Page Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        {/* Center Zoom & Rotation */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
           <button className="btn-icon btn-sm" onClick={() => setZoom(Math.max(50, zoom - 15))} title="Zoom Out">
-            <ZoomOut size={16} />
+            <ZoomOut size={14} />
           </button>
-          <span style={{ fontSize: 'var(--text-xs)', minWidth: 44, textAlign: 'center' }}>{zoom}%</span>
+          <span style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', minWidth: 40, textAlign: 'center' }}>
+            {zoom}%
+          </span>
           <button className="btn-icon btn-sm" onClick={() => setZoom(Math.min(200, zoom + 15))} title="Zoom In">
-            <ZoomIn size={16} />
+            <ZoomIn size={14} />
           </button>
           <button className="btn-icon btn-sm" onClick={() => setRotation((rotation + 90) % 360)} title="Rotate">
-            <RotateCw size={16} />
+            <RotateCw size={14} />
           </button>
         </div>
 
         {/* Right Actions */}
         <div className="reader-actions">
           <button
-            className={`btn-icon ${showThumbnails ? 'active' : ''}`}
-            onClick={() => setShowThumbnails(!showThumbnails)}
+            className={`btn-icon btn-sm ${showThumbnails ? 'active' : ''}`}
+            onClick={() => {
+              setShowThumbnails(!showThumbnails);
+              setShowAnnotations(false);
+            }}
             title="Page Thumbnails"
           >
-            <LayoutGrid size={18} />
+            <LayoutGrid size={16} />
           </button>
 
           <button
-            className={`btn-icon ${isBookmarked ? 'active' : ''}`}
+            className={`btn-icon btn-sm ${isBookmarked ? 'active' : ''}`}
             onClick={toggleBookmark}
-            style={{ color: isBookmarked ? 'var(--brand-400)' : 'inherit' }}
             title="Bookmark Page"
           >
-            <BookmarkIcon size={18} fill={isBookmarked ? 'currentColor' : 'none'} />
+            <BookmarkIcon size={16} fill={isBookmarked ? 'currentColor' : 'none'} />
+          </button>
+
+          <button
+            className={`btn-icon btn-sm ${showAnnotations ? 'active' : ''}`}
+            onClick={() => {
+              setShowAnnotations(!showAnnotations);
+              setShowThumbnails(false);
+            }}
+            title="Annotations"
+          >
+            <Highlighter size={16} />
           </button>
 
           {onOpenLibris && (
             <button className="btn btn-sm btn-primary" onClick={() => onOpenLibris()}>
-              <Sparkles size={14} />
-              Libris RAG
+              <Sparkles size={13} />
+              <span>Libris AI</span>
             </button>
           )}
         </div>
@@ -222,21 +283,22 @@ export const PdfReader: React.FC<IReaderProps> = ({
       <div className="reader-viewport">
         {/* Thumbnails Sidebar */}
         {showThumbnails && (
-          <aside className="reader-sidebar left" style={{ width: 220 }}>
+          <aside className="reader-sidebar left" style={{ width: 200 }}>
             <div className="reader-sidebar-header">
-              <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>Thumbnails</span>
+              <span style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', fontWeight: 600, letterSpacing: '0.05em' }}>
+                THUMBNAILS
+              </span>
               <button className="btn-icon btn-sm" onClick={() => setShowThumbnails(false)}>✕</button>
             </div>
-            <div className="reader-sidebar-body" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 'var(--space-3)' }}>
+            <div className="reader-sidebar-body" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 'var(--space-2)' }}>
               {Array.from({ length: totalPages }).map((_, i) => (
                 <div
                   key={i}
                   onClick={() => setCurrentPage(i + 1)}
+                  className={`palette-item ${currentPage === i + 1 ? 'active' : ''}`}
                   style={{
-                    padding: 'var(--space-2)',
-                    background: currentPage === i + 1 ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-surface)',
-                    border: `1px solid ${currentPage === i + 1 ? 'var(--brand-500)' : 'var(--border-subtle)'}`,
-                    borderRadius: 'var(--radius-sm)',
+                    padding: '6px',
+                    borderRadius: 'var(--radius-xs)',
                     cursor: 'pointer',
                     display: 'flex',
                     flexDirection: 'column',
@@ -246,20 +308,21 @@ export const PdfReader: React.FC<IReaderProps> = ({
                   <div
                     style={{
                       width: '100%',
-                      height: 110,
+                      height: 80,
                       background: 'var(--bg-input)',
-                      borderRadius: 4,
+                      borderRadius: 2,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: 10,
                       color: 'var(--text-muted)',
                       border: '1px solid var(--border-subtle)',
                     }}
                   >
-                    <FileText size={24} />
+                    <FileText size={20} />
                   </div>
-                  <span style={{ fontSize: 'var(--text-xs)', marginTop: 4 }}>Page {i + 1}</span>
+                  <span style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', marginTop: 4 }}>
+                    PAGE {i + 1}
+                  </span>
                 </div>
               ))}
             </div>
@@ -267,52 +330,87 @@ export const PdfReader: React.FC<IReaderProps> = ({
         )}
 
         {/* PDF Page Stage */}
-        <main
-          className="reader-stage"
-          style={{
-            background: 'var(--bg-app)',
-          }}
-        >
+        <main className="reader-stage">
           <div
             className="card card-elevated selectable"
             style={{
-              width: `${(680 * zoom) / 100}px`,
-              minHeight: `${(900 * zoom) / 100}px`,
-              background: '#ffffff',
-              color: '#0f172a',
-              padding: `${(48 * zoom) / 100}px`,
+              width: `${(640 * zoom) / 100}px`,
+              minHeight: `${(860 * zoom) / 100}px`,
+              background: 'var(--bg-surface-elevated)',
+              color: 'var(--text-primary)',
+              padding: `${(40 * zoom) / 100}px`,
               borderRadius: 'var(--radius-sm)',
-              boxShadow: '0 15px 40px rgba(0, 0, 0, 0.5)',
               transform: `rotate(${rotation}deg)`,
-              transition: 'transform 0.2s ease, width 0.2s ease',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'space-between',
+              border: '1px solid var(--border-strong)',
             }}
           >
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: 8, marginBottom: 24, fontSize: '0.8rem', color: '#64748b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 6, marginBottom: 20, fontFamily: 'var(--font-tech)', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                 <span>{document.title}</span>
-                <span>Page {currentPage}</span>
+                <span>PAGE {currentPage}</span>
               </div>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: 16, color: '#0f172a' }}>
+              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.35rem', fontWeight: 700, marginBottom: 14, color: 'var(--text-primary)' }}>
                 {activePageData.title}
               </h2>
-              <p style={{ fontSize: '1.05rem', lineHeight: 1.8, color: '#334155', textAlign: 'justify' }}>
-                {activePageData.text}
+              <p style={{ fontSize: '1rem', lineHeight: 1.8, color: 'var(--text-primary)', textAlign: 'justify' }}>
+                {renderHighlightedPageText(activePageData.text)}
               </p>
-              <div style={{ marginTop: 24, padding: 16, background: '#f8fafc', borderRadius: 8, borderLeft: '4px solid #6366f1' }}>
-                <p style={{ fontSize: '0.92rem', color: '#475569', margin: 0 }}>
-                  <strong>Key Finding:</strong> Attention mechanisms calculate dynamic dependencies across all tokens simultaneously without recurrence overhead.
-                </p>
-              </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'center', borderTop: '1px solid #e2e8f0', paddingTop: 8, marginTop: 32, fontSize: '0.75rem', color: '#94a3b8' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: 6, marginTop: 24, fontFamily: 'var(--font-tech)', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
               - {currentPage} -
             </div>
           </div>
         </main>
+
+        {/* Annotations Drawer */}
+        {showAnnotations && (
+          <aside className="reader-sidebar">
+            <div className="reader-sidebar-header">
+              <span style={{ fontFamily: 'var(--font-tech)', fontWeight: 600, fontSize: 'var(--text-2xs)', letterSpacing: '0.05em' }}>
+                ANNOTATIONS ({annotations.length})
+              </span>
+              <button className="btn-icon btn-sm" onClick={() => setShowAnnotations(false)}>✕</button>
+            </div>
+            <div className="reader-sidebar-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              {annotations.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 'var(--space-6)', color: 'var(--text-muted)', fontSize: 'var(--text-xs)' }}>
+                  No annotations on this document yet.
+                </div>
+              ) : (
+                annotations.map(a => (
+                  <div key={a.id} className="card" style={{ padding: 'var(--space-3)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span className="badge" style={{ textTransform: 'uppercase' }}>{a.location}</span>
+                      <button className="btn-icon btn-sm" onClick={() => deleteHighlight(a.id)}>
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                    <div
+                      style={{ fontSize: 'var(--text-xs)', fontStyle: 'italic', cursor: 'pointer' }}
+                      onClick={() => {
+                        const pageNum = parseInt(a.location.replace('page-', ''), 10);
+                        if (!isNaN(pageNum)) setCurrentPage(pageNum);
+                        setShowAnnotations(false);
+                      }}
+                      title="Click to jump to page"
+                    >
+                      "{a.selectedText}"
+                    </div>
+                    {a.note && (
+                      <div style={{ fontSize: 'var(--text-2xs)', color: 'var(--text-secondary)', marginTop: 4, padding: '3px 6px', background: 'var(--bg-input)' }}>
+                        Note: {a.note}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </aside>
+        )}
       </div>
 
       {/* PDF Footer Bar */}
@@ -322,8 +420,8 @@ export const PdfReader: React.FC<IReaderProps> = ({
           disabled={currentPage <= 1}
           onClick={() => setCurrentPage(currentPage - 1)}
         >
-          <ChevronLeft size={16} />
-          Previous Page
+          <ChevronLeft size={14} />
+          <span>PREV</span>
         </button>
 
         <div className="reader-progress-slider-wrap">
@@ -336,7 +434,7 @@ export const PdfReader: React.FC<IReaderProps> = ({
             onChange={e => setCurrentPage(Number(e.target.value))}
             className="reader-progress-slider"
           />
-          <span>{totalPages} Pages</span>
+          <span>{totalPages} PAGES</span>
         </div>
 
         <button
@@ -344,8 +442,8 @@ export const PdfReader: React.FC<IReaderProps> = ({
           disabled={currentPage >= totalPages}
           onClick={() => setCurrentPage(currentPage + 1)}
         >
-          Next Page
-          <ChevronRight size={16} />
+          <span>NEXT</span>
+          <ChevronRight size={14} />
         </button>
       </footer>
     </div>

@@ -35,15 +35,15 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 }) => {
   const [content, setContent] = useState(note.content);
   const [viewMode, setViewMode] = useState<'split' | 'edit' | 'preview'>('split');
-  const [parsed, setParsed] = useState(parseNoteContent(note.content, note.title));
+  const [parsed, setParsed] = useState(parseNoteContent(note.content));
   const [allNotes, setAllNotes] = useState<Note[]>([]);
   const [backlinksList, setBacklinksList] = useState<Note[]>([]);
   const [showInspector, setShowInspector] = useState(true);
 
   useEffect(() => {
-    const updated = parseNoteContent(content, note.title);
+    const updated = parseNoteContent(content);
     setParsed(updated);
-  }, [content, note.title]);
+  }, [content]);
 
   useEffect(() => {
     const loadNotes = async () => {
@@ -64,7 +64,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const handleSave = async () => {
     const updated: Note = {
       ...note,
-      title: parsed.title,
+      title: parsed.title || note.title,
       content,
       frontmatter: parsed.frontmatter,
       tags: parsed.tags,
@@ -244,7 +244,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 )}
 
                 {/* Rendered Preview */}
-                {renderMarkdownContent(parsed.cleanContent, onNavigateNote)}
+                {renderMarkdownContent(parsed.body, onNavigateNote)}
               </div>
             </div>
           )}

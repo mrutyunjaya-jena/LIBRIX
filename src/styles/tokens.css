@@ -1,12 +1,15 @@
-/* LIBRIX Design System Tokens */
+/* LIBRIX Design System Tokens — STRICT SCI-FI GRAYSCALE */
 
 :root {
   /* Font Families */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-serif: 'Lora', Georgia, Cambria, 'Times New Roman', Times, serif;
-  --font-mono: 'JetBrains Mono', Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+  --font-display: 'Rajdhani', 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-tech: 'JetBrains Mono', Consolas, monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Lora', Georgia, Cambria, 'Times New Roman', serif;
+  --font-mono: 'JetBrains Mono', monospace;
   
   /* Font Sizes */
+  --text-2xs: 0.6875rem; /* 11px */
   --text-xs: 0.75rem;     /* 12px */
   --text-sm: 0.84375rem;  /* 13.5px */
   --text-base: 0.9375rem; /* 15px */
@@ -16,12 +19,12 @@
   --text-2xl: 1.875rem;   /* 30px */
   --text-3xl: 2.25rem;    /* 36px */
   
-  /* Radii */
-  --radius-xs: 4px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  /* Radii — Subtle, technical, tactical */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
   --radius-full: 9999px;
   
   /* Spacing Scale */
@@ -36,168 +39,177 @@
   --space-12: 3rem;    /* 48px */
   
   /* Transitions */
-  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-bounce: 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
-  
-  /* Brand Core Palette */
-  --brand-50: #eef2ff;
-  --brand-100: #e0e7ff;
-  --brand-200: #c7d2fe;
-  --brand-300: #a5b4fc;
-  --brand-400: #818cf8;
-  --brand-500: #6366f1; /* Core Indigo */
-  --brand-600: #4f46e5;
-  --brand-700: #4338ca;
-  --brand-800: #3730a3;
-  --brand-900: #312e81;
-  --brand-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
-  --brand-glow: 0 0 20px rgba(99, 102, 241, 0.35);
+  --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* Status Colors */
-  --success: #10b981;
-  --success-bg: rgba(16, 185, 129, 0.12);
-  --warning: #f59e0b;
-  --warning-bg: rgba(245, 158, 11, 0.12);
-  --danger: #ef4444;
-  --danger-bg: rgba(239, 68, 68, 0.12);
-  --info: #3b82f6;
-  --info-bg: rgba(59, 130, 246, 0.12);
+  /* Grayscale Universal Tonal Palette */
+  --gray-0: #000000;
+  --gray-50: #0a0a0a;
+  --gray-100: #111111;
+  --gray-200: #171717;
+  --gray-300: #1f1f1f;
+  --gray-400: #262626;
+  --gray-500: #333333;
+  --gray-600: #525252;
+  --gray-700: #737373;
+  --gray-800: #a3a3a3;
+  --gray-900: #d4d4d4;
+  --gray-950: #f5f5f5;
+  --gray-1000: #ffffff;
 }
 
 /* ==========================================================================
-   THEME: DARK (Default)
+   THEME: DARK (Primary Sci-Fi Workstation Terminal)
    ========================================================================== */
 body.theme-dark,
 :root[data-theme='dark'] {
-  --bg-app: #0d0f14;
-  --bg-sidebar: #12151d;
-  --bg-surface: #171b26;
-  --bg-surface-elevated: #1e2332;
-  --bg-surface-hover: #262c3e;
-  --bg-input: #131722;
-  --bg-glass: rgba(23, 27, 38, 0.75);
-  --bg-overlay: rgba(5, 7, 10, 0.75);
+  --bg-app: #080808;
+  --bg-sidebar: #0e0e0e;
+  --bg-surface: #121212;
+  --bg-surface-elevated: #181818;
+  --bg-surface-hover: #222222;
+  --bg-surface-active: #2a2a2a;
+  --bg-input: #0e0e0e;
+  --bg-glass: rgba(18, 18, 18, 0.85);
+  --bg-overlay: rgba(0, 0, 0, 0.85);
 
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-medium: rgba(255, 255, 255, 0.12);
-  --border-strong: rgba(255, 255, 255, 0.2);
-  --border-focus: var(--brand-500);
+  --border-subtle: #1f1f1f;
+  --border-medium: #2a2a2a;
+  --border-strong: #404040;
+  --border-focus: #ffffff;
 
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-inverse: #0f172a;
+  --text-primary: #f5f5f5;
+  --text-secondary: #a3a3a3;
+  --text-muted: #666666;
+  --text-inverse: #080808;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
-  --shadow-elevated: 0 20px 48px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border-medium);
+  --btn-primary-bg: #f5f5f5;
+  --btn-primary-text: #080808;
+  --btn-primary-hover: #ffffff;
+  --btn-secondary-bg: #1c1c1c;
+  --btn-secondary-text: #f5f5f5;
+  --btn-secondary-border: #333333;
+  --btn-secondary-hover: #282828;
+
+  --badge-bg: #1c1c1c;
+  --badge-border: #333333;
+  --badge-text: #d4d4d4;
+
+  --highlight-bg: rgba(255, 255, 255, 0.15);
+  --highlight-border: #ffffff;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.75);
+  --shadow-elevated: 0 20px 48px -8px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--border-medium);
   
   --scrollbar-track: transparent;
-  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+  --scrollbar-thumb: #2a2a2a;
+  --scrollbar-thumb-hover: #444444;
 }
 
 /* ==========================================================================
-   THEME: LIGHT
+   THEME: LIGHT (Technical Laboratory Workstation)
    ========================================================================== */
 body.theme-light,
 :root[data-theme='light'] {
-  --bg-app: #f8fafc;
-  --bg-sidebar: #f1f5f9;
+  --bg-app: #fafafa;
+  --bg-sidebar: #f3f3f3;
   --bg-surface: #ffffff;
-  --bg-surface-elevated: #ffffff;
-  --bg-surface-hover: #f1f5f9;
-  --bg-input: #f8fafc;
-  --bg-glass: rgba(255, 255, 255, 0.85);
-  --bg-overlay: rgba(15, 23, 42, 0.45);
+  --bg-surface-elevated: #f0f0f0;
+  --bg-surface-hover: #e8e8e8;
+  --bg-surface-active: #dddddd;
+  --bg-input: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.9);
+  --bg-overlay: rgba(0, 0, 0, 0.55);
 
-  --border-subtle: rgba(0, 0, 0, 0.06);
-  --border-medium: rgba(0, 0, 0, 0.12);
-  --border-strong: rgba(0, 0, 0, 0.2);
-  --border-focus: var(--brand-600);
+  --border-subtle: #e5e5e5;
+  --border-medium: #d4d4d4;
+  --border-strong: #a3a3a3;
+  --border-focus: #000000;
 
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-primary: #0a0a0a;
+  --text-secondary: #525252;
+  --text-muted: #888888;
   --text-inverse: #ffffff;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --btn-primary-bg: #0a0a0a;
+  --btn-primary-text: #ffffff;
+  --btn-primary-hover: #222222;
+  --btn-secondary-bg: #f0f0f0;
+  --btn-secondary-text: #0a0a0a;
+  --btn-secondary-border: #d4d4d4;
+  --btn-secondary-hover: #e4e4e4;
+
+  --badge-bg: #f0f0f0;
+  --badge-border: #d4d4d4;
+  --badge-text: #333333;
+
+  --highlight-bg: rgba(0, 0, 0, 0.08);
+  --highlight-border: #000000;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
-  --shadow-elevated: 0 20px 48px -8px rgba(15, 23, 42, 0.12), 0 0 0 1px var(--border-medium);
+  --shadow-elevated: 0 20px 48px -8px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--border-medium);
 
   --scrollbar-track: transparent;
-  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
-  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
+  --scrollbar-thumb: #d4d4d4;
+  --scrollbar-thumb-hover: #aaaaaa;
 }
 
 /* ==========================================================================
-   THEME: SEPIA (Warm & Eye-Relaxing for Reading)
+   SUBTLE SCI-FI WORKSTATION ANIMATIONS
    ========================================================================== */
-body.theme-sepia,
-:root[data-theme='sepia'] {
-  --bg-app: #f4ecd8;
-  --bg-sidebar: #ede2c8;
-  --bg-surface: #faf4e6;
-  --bg-surface-elevated: #ffffff;
-  --bg-surface-hover: #ede2c8;
-  --bg-input: #faf4e6;
-  --bg-glass: rgba(250, 244, 230, 0.85);
-  --bg-overlay: rgba(46, 37, 24, 0.5);
-
-  --border-subtle: rgba(92, 77, 54, 0.1);
-  --border-medium: rgba(92, 77, 54, 0.2);
-  --border-strong: rgba(92, 77, 54, 0.35);
-  --border-focus: #b45309;
-
-  --text-primary: #3d3020;
-  --text-secondary: #6e5940;
-  --text-muted: #9b8467;
-  --text-inverse: #ffffff;
-
-  --shadow-sm: 0 1px 2px rgba(78, 60, 36, 0.08);
-  --shadow-md: 0 4px 12px rgba(78, 60, 36, 0.1);
-  --shadow-lg: 0 12px 32px rgba(78, 60, 36, 0.15);
-  --shadow-elevated: 0 20px 48px -8px rgba(78, 60, 36, 0.15), 0 0 0 1px var(--border-medium);
-
-  --scrollbar-track: transparent;
-  --scrollbar-thumb: rgba(92, 77, 54, 0.2);
-  --scrollbar-thumb-hover: rgba(92, 77, 54, 0.35);
+@keyframes scifiScanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(1000%); }
 }
 
-/* ==========================================================================
-   THEME: HIGH CONTRAST (Accessibility)
-   ========================================================================== */
-body.theme-high-contrast,
-:root[data-theme='high-contrast'] {
-  --bg-app: #000000;
-  --bg-sidebar: #0a0a0a;
-  --bg-surface: #111111;
-  --bg-surface-elevated: #1a1a1a;
-  --bg-surface-hover: #262626;
-  --bg-input: #000000;
-  --bg-glass: #111111;
-  --bg-overlay: rgba(0, 0, 0, 0.9);
+@keyframes scifiFlicker {
+  0%, 100% { opacity: 1; }
+  45% { opacity: 0.94; }
+  50% { opacity: 0.88; }
+  55% { opacity: 1; }
+  85% { opacity: 0.96; }
+}
 
-  --border-subtle: #ffffff;
-  --border-medium: #ffffff;
-  --border-strong: #ffffff;
-  --border-focus: #ffff00;
+@keyframes scifiTerminalBlink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
 
-  --text-primary: #ffffff;
-  --text-secondary: #f0f0f0;
-  --text-muted: #d0d0d0;
-  --text-inverse: #000000;
+@keyframes subtleGlitch {
+  0% { transform: translate(0, 0); }
+  20% { transform: translate(-1px, 1px); }
+  40% { transform: translate(-1px, -1px); }
+  60% { transform: translate(1px, 1px); }
+  80% { transform: translate(1px, -1px); }
+  100% { transform: translate(0, 0); }
+}
 
-  --shadow-sm: none;
-  --shadow-md: none;
-  --shadow-lg: none;
-  --shadow-elevated: 0 0 0 2px #ffffff;
+.scifi-glitch-hover:hover {
+  animation: subtleGlitch 0.2s ease-in-out 1;
+}
 
-  --scrollbar-track: #000000;
-  --scrollbar-thumb: #ffffff;
-  --scrollbar-thumb-hover: #ffff00;
+.terminal-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  background: var(--text-primary);
+  vertical-align: middle;
+  margin-left: 4px;
+  animation: scifiTerminalBlink 1s infinite;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
