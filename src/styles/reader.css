@@ -1,0 +1,257 @@
+/* LIBRIX Reader Styles */
+
+.reader-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background-color: var(--reader-bg, var(--bg-app));
+  color: var(--reader-text, var(--text-primary));
+  position: relative;
+  overflow: hidden;
+}
+
+/* Reader Navigation Header */
+.reader-header {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-4);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  z-index: 50;
+  transition: transform var(--transition-normal);
+}
+
+.reader-header.header-hidden {
+  transform: translateY(-100%);
+}
+
+.reader-title-area {
+  display: flex;
+  flex-direction: column;
+  max-width: 45%;
+}
+
+.reader-doc-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reader-chapter-title {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reader-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Reader Main Viewport */
+.reader-viewport {
+  flex: 1;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+
+.reader-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-4);
+  position: relative;
+}
+
+.reader-stage.paginated {
+  overflow: hidden;
+  justify-content: center;
+}
+
+/* Reading Paper / Content Container */
+.reader-content-frame {
+  width: 100%;
+  max-width: var(--reader-max-width, 760px);
+  min-height: 80vh;
+  margin: 0 auto;
+  line-height: var(--reader-line-height, 1.7);
+  font-family: var(--reader-font, var(--font-serif));
+  font-size: var(--reader-font-size, 18px);
+  letter-spacing: var(--reader-letter-spacing, 0.01em);
+  color: var(--reader-text, var(--text-primary));
+}
+
+.reader-content-frame p {
+  margin-bottom: 1.4em;
+  text-align: var(--reader-align, left);
+}
+
+.reader-content-frame h1,
+.reader-content-frame h2,
+.reader-content-frame h3,
+.reader-content-frame h4 {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  margin-top: 1.8em;
+  margin-bottom: 0.6em;
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+
+.reader-content-frame h1 { font-size: 1.8em; }
+.reader-content-frame h2 { font-size: 1.4em; }
+.reader-content-frame h3 { font-size: 1.2em; }
+
+.reader-content-frame blockquote {
+  border-left: 3px solid var(--brand-500);
+  padding-left: var(--space-4);
+  margin: 1.5em 0;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+.reader-content-frame img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  margin: 1.5em auto;
+}
+
+/* Tap zones for paginated touch navigation */
+.reader-tap-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 20%;
+  z-index: 10;
+  cursor: pointer;
+}
+
+.reader-tap-left {
+  left: 0;
+}
+
+.reader-tap-right {
+  right: 0;
+}
+
+/* Reader Bottom Progress Bar & Footer */
+.reader-footer {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-6);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-subtle);
+  z-index: 50;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.reader-progress-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  max-width: 500px;
+  margin: 0 var(--space-4);
+}
+
+.reader-progress-slider {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  background: var(--border-medium);
+  border-radius: var(--radius-full);
+  outline: none;
+}
+
+.reader-progress-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--brand-500);
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.5);
+}
+
+/* Reader Sidebars (TOC, Highlights, Libris Chat) */
+.reader-sidebar {
+  width: 340px;
+  background: var(--bg-surface-elevated);
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  z-index: 60;
+  animation: slideInRight var(--transition-fast) ease-out;
+}
+
+.reader-sidebar.left {
+  border-left: none;
+  border-right: 1px solid var(--border-subtle);
+  animation: fadeIn var(--transition-fast) ease-out;
+}
+
+.reader-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.reader-sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+
+/* Highlights Palette & Floating Toolbar */
+.highlight-yellow {
+  background-color: rgba(254, 240, 138, 0.4);
+  border-bottom: 2px solid #eab308;
+}
+
+.highlight-green {
+  background-color: rgba(187, 247, 208, 0.4);
+  border-bottom: 2px solid #22c55e;
+}
+
+.highlight-blue {
+  background-color: rgba(191, 219, 254, 0.4);
+  border-bottom: 2px solid #3b82f6;
+}
+
+.highlight-pink {
+  background-color: rgba(251, 207, 232, 0.4);
+  border-bottom: 2px solid #ec4899;
+}
+
+.selection-toolbar {
+  position: absolute;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px 8px;
+  z-index: 100;
+  animation: fadeIn var(--transition-fast) ease-out;
+}
