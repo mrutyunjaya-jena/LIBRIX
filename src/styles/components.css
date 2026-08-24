@@ -653,3 +653,74 @@ input:checked + .slider:before {
   max-width: 380px;
   font-size: var(--text-xs);
 }
+
+/* ==========================================================================
+   MARKDOWN VAULT & WIKILINKS STYLES
+   ========================================================================== */
+.wikilink-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-medium);
+  color: var(--text-primary) !important;
+  font-family: var(--font-tech);
+  font-size: 0.85em;
+  font-weight: 600;
+  text-decoration: none !important;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.wikilink-badge:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-focus);
+}
+
+.md-rendered-container {
+  font-family: var(--font-sans);
+  line-height: 1.75;
+  color: var(--text-primary);
+}
+
+.md-rendered-container h1,
+.md-rendered-container h2,
+.md-rendered-container h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 1.6em;
+  margin-bottom: 0.5em;
+}
+
+.md-code-block {
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  padding: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow-x: auto;
+  color: var(--text-primary);
+  margin: 1em 0;
+}
+
+.md-inline-code {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+.md-quote {
+  border-left: 3px solid var(--text-primary);
+  padding-left: var(--space-4);
+  margin: 1.2em 0;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+

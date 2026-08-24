@@ -9,7 +9,7 @@ import {
   Sparkles,
   Trash2,
   Edit2,
-  ArrowLeft,
+  Clock,
 } from 'lucide-react';
 import { Note } from '../../core/types';
 import { db } from '../../core/db/DatabaseEngine';
@@ -76,7 +76,7 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
       id: `daily_${Date.now()}`,
       title: `Daily Note: ${today}`,
       slug: `daily-note-${today}`,
-      content: `# Daily Note: ${today}\n\n## Objectives\n- [ ] Review literature\n- [ ] Cross-link ideas with [[Universal Storage Architecture]]\n\n## Log & Reflections\n\n#DailyJournal`,
+      content: `# Daily Note: ${today}\n\n## Objectives\n- [ ] Review systems literature\n- [ ] Cross-link ideas with [[Universal Storage Architecture]]\n\n## Notes & Thoughts\n\n#DailyJournal`,
       frontmatter: { title: `Daily Note: ${today}`, date: today, tags: ['DailyJournal'] },
       tags: ['DailyJournal'],
       wikilinks: ['Universal Storage Architecture'],
@@ -98,39 +98,24 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
     }
   };
 
-  // If a note is currently open in editor
+  // If a note is currently open in editor, render full-height MarkdownEditor directly without double header
   if (activeNote) {
     return (
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-        <div
-          style={{
-            height: 44,
-            padding: '0 var(--space-4)',
-            borderBottom: '1px solid var(--border-subtle)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            background: 'var(--bg-surface)',
-          }}
-        >
-          <button className="btn btn-ghost btn-sm" onClick={() => setActiveNote(null)}>
-            <ArrowLeft size={13} />
-            <span>Back to Notes</span>
-          </button>
-          <div style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', color: 'var(--text-muted)' }}>
-            OBSIDIAN-COMPATIBLE MARKDOWN VAULT
-          </div>
-        </div>
-        <MarkdownEditor
-          note={activeNote}
-          onSave={async updated => {
-            await db.saveNote(updated);
-            onNotesUpdated();
-            setActiveNote(updated);
-          }}
-          onClose={() => setActiveNote(null)}
-        />
-      </div>
+      <MarkdownEditor
+        note={activeNote}
+        onSave={async updated => {
+          await db.saveNote(updated);
+          onNotesUpdated();
+          setActiveNote(updated);
+        }}
+        onClose={() => setActiveNote(null)}
+        onNavigateNote={target => {
+          const match = notes.find(
+            n => n.title.toLowerCase() === target.toLowerCase() || n.id === target
+          );
+          if (match) setActiveNote(match);
+        }}
+      />
     );
   }
 
@@ -223,7 +208,7 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
                 key={note.id}
                 className="card card-interactive scifi-box"
                 onClick={() => setActiveNote(note)}
-                style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', height: 180 }}
+                style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', minHeight: 170 }}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4 }}>
                   <div style={{ fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>

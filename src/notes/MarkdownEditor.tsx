@@ -9,10 +9,13 @@ import {
   Sparkles,
   ArrowLeft,
   Calendar,
-  Clock,
   ExternalLink,
   FileText,
   Trash2,
+  Check,
+  Code,
+  List,
+  Heading,
 } from 'lucide-react';
 import { Note } from '../core/types';
 import { db } from '../core/db/DatabaseEngine';
@@ -39,10 +42,12 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const [allNotes, setAllNotes] = useState<Note[]>([]);
   const [backlinksList, setBacklinksList] = useState<Note[]>([]);
   const [showInspector, setShowInspector] = useState(true);
+  const [isSaved, setIsSaved] = useState(true);
 
   useEffect(() => {
     const updated = parseNoteContent(content);
     setParsed(updated);
+    setIsSaved(false);
   }, [content]);
 
   useEffect(() => {
@@ -73,6 +78,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     };
     await db.saveNote(updated);
     onSave(updated);
+    setIsSaved(true);
   };
 
   const insertFormatting = (prefix: string, suffix = '') => {
@@ -84,6 +90,10 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     const replacement = `${prefix}${selected || 'text'}${suffix}`;
     const newContent = content.substring(0, start) + replacement + content.substring(end);
     setContent(newContent);
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + prefix.length, end + prefix.length);
+    }, 10);
   };
 
   const insertWikilink = () => {
@@ -94,80 +104,120 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     insertFormatting('#', '');
   };
 
+  const insertHeading = () => {
+    insertFormatting('## ', '');
+  };
+
+  const insertCodeBlock = () => {
+    insertFormatting('```\n', '\n```');
+  };
+
   return (
-    <div className="reader-container theme-dark">
-      {/* Editor Header */}
-      <header className="reader-header">
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        width: '100%',
+        background: 'var(--bg-app)',
+        color: 'var(--text-primary)',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Editor Header Toolbar */}
+      <header
+        style={{
+          height: 48,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 var(--space-4)',
+          background: 'var(--bg-surface)',
+          borderBottom: '1px solid var(--border-subtle)',
+          zIndex: 40,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-          <button className="btn-icon" onClick={onClose} title="Back to Notes">
-            <ArrowLeft size={18} />
+          <button className="btn-icon btn-sm" onClick={onClose} title="Back to Notes Vault">
+            <ArrowLeft size={16} />
           </button>
-          <div className="reader-title-area">
-            <div className="reader-doc-title">{parsed.title || 'Untitled Note'}</div>
-            <div className="reader-chapter-title">
-              {parsed.tags.map(t => `#${t}`).join(' ') || 'Markdown Vault'}
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-sm)', letterSpacing: '0.03em' }}>
+              {parsed.title || 'Untitled Note'}
+            </div>
+            <div style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', color: 'var(--text-muted)' }}>
+              {isSaved ? 'SAVED // SYNCED' : 'UNSAVED CHANGES •'}
             </div>
           </div>
         </div>
 
-        {/* Center Mode Controls */}
-        <div style={{ display: 'flex', background: 'var(--bg-input)', padding: 2, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+        {/* Center View Controls (Edit / Split / Preview) */}
+        <div style={{ display: 'flex', background: 'var(--bg-input)', padding: 2, borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-medium)' }}>
           <button
-            className={`btn btn-sm ${viewMode === 'edit' ? 'btn-primary' : 'btn-ghost'}`}
+            className={`btn-icon btn-sm ${viewMode === 'edit' ? 'active' : ''}`}
             onClick={() => setViewMode('edit')}
             title="Edit Mode"
           >
-            <Edit3 size={14} />
+            <Edit3 size={13} />
           </button>
           <button
-            className={`btn btn-sm ${viewMode === 'split' ? 'btn-primary' : 'btn-ghost'}`}
+            className={`btn-icon btn-sm ${viewMode === 'split' ? 'active' : ''}`}
             onClick={() => setViewMode('split')}
             title="Split Mode"
           >
-            <Columns size={14} />
+            <Columns size={13} />
           </button>
           <button
-            className={`btn btn-sm ${viewMode === 'preview' ? 'btn-primary' : 'btn-ghost'}`}
+            className={`btn-icon btn-sm ${viewMode === 'preview' ? 'active' : ''}`}
             onClick={() => setViewMode('preview')}
             title="Live Preview"
           >
-            <Eye size={14} />
+            <Eye size={13} />
           </button>
         </div>
 
-        {/* Right Actions */}
-        <div className="reader-actions">
-          <button className="btn btn-sm btn-ghost" onClick={insertWikilink} title="Insert [[Wikilink]]">
-            <Link size={14} />
-            [[Link]]
+        {/* Right Formatting & Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+          <button className="btn btn-secondary btn-sm" onClick={insertHeading} title="Heading 2">
+            <Heading size={13} />
           </button>
 
-          <button className="btn btn-sm btn-ghost" onClick={insertTag} title="Insert #tag">
-            <TagIcon size={14} />
-            #Tag
+          <button className="btn btn-secondary btn-sm" onClick={insertWikilink} title="Insert [[Wikilink]]">
+            <Link size={13} />
+            <span>[[Link]]</span>
+          </button>
+
+          <button className="btn btn-secondary btn-sm" onClick={insertTag} title="Insert #tag">
+            <TagIcon size={13} />
+            <span>#Tag</span>
+          </button>
+
+          <button className="btn btn-secondary btn-sm" onClick={insertCodeBlock} title="Code Block">
+            <Code size={13} />
           </button>
 
           {onOpenLibris && (
             <button
-              className="btn btn-sm btn-primary"
+              className="btn btn-primary btn-sm"
               onClick={() => onOpenLibris(content)}
-              title="Ask Libris about Note"
+              title="Ask Libris AI about this Note"
             >
-              <Sparkles size={14} />
-              Libris AI
+              <Sparkles size={13} />
+              <span>Ask Libris</span>
             </button>
           )}
 
-          <button className="btn btn-sm btn-primary" onClick={handleSave} title="Save Note">
-            <Save size={14} />
-            Save
+          <button className="btn btn-primary btn-sm" onClick={handleSave} title="Save Note">
+            <Save size={13} />
+            <span>Save</span>
           </button>
         </div>
       </header>
 
       {/* Editor Body */}
-      <div className="reader-viewport">
-        {/* Editor Main Canvas */}
+      <div style={{ flex: 1, display: 'flex', height: 'calc(100% - 48px)', overflow: 'hidden' }}>
+        {/* Main Work Area (Edit + Preview) */}
         <div style={{ flex: 1, display: 'flex', height: '100%', overflow: 'hidden' }}>
           {/* Edit Pane */}
           {(viewMode === 'edit' || viewMode === 'split') && (
@@ -178,11 +228,12 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 flexDirection: 'column',
                 borderRight: viewMode === 'split' ? '1px solid var(--border-subtle)' : 'none',
                 background: 'var(--bg-surface)',
+                height: '100%',
+                overflow: 'hidden',
               }}
             >
               <textarea
                 id="note-textarea"
-                className="note-editor"
                 value={content}
                 onChange={e => setContent(e.target.value)}
                 placeholder="# Write in Markdown...\n\nUse [[Note Title]] for links and #tags for categories."
@@ -195,10 +246,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                   border: 'none',
                   color: 'var(--text-primary)',
                   fontFamily: 'var(--font-mono)',
-                  fontSize: '0.95rem',
-                  lineHeight: 1.6,
+                  fontSize: '0.92rem',
+                  lineHeight: 1.7,
                   resize: 'none',
                   outline: 'none',
+                  boxSizing: 'border-box',
                 }}
               />
             </div>
@@ -207,33 +259,34 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           {/* Preview Pane */}
           {(viewMode === 'preview' || viewMode === 'split') && (
             <div
-              className="reader-stage selectable"
+              className="selectable"
               style={{
                 flex: 1,
                 background: 'var(--bg-app)',
                 overflowY: 'auto',
                 padding: 'var(--space-6)',
+                height: '100%',
+                boxSizing: 'border-box',
               }}
             >
               <div className="reader-content-frame" style={{ maxWidth: 720, margin: '0 auto' }}>
                 {/* Properties Header Box */}
                 {Object.keys(parsed.frontmatter).length > 0 && (
                   <div
-                    className="card"
+                    className="card scifi-box"
                     style={{
                       marginBottom: 'var(--space-5)',
                       padding: 'var(--space-3) var(--space-4)',
                       background: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--border-subtle)',
                     }}
                   >
-                    <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>
-                      PROPERTIES
+                    <div style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.05em' }}>
+                      PROPERTIES & METADATA
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 16px', fontSize: 'var(--text-sm)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-tech)' }}>
                       {Object.entries(parsed.frontmatter).map(([k, v]) => (
                         <React.Fragment key={k}>
-                          <span style={{ color: 'var(--text-secondary)' }}>{k}:</span>
+                          <span style={{ color: 'var(--text-muted)' }}>{k}:</span>
                           <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
                             {Array.isArray(v) ? v.join(', ') : String(v)}
                           </span>
@@ -250,13 +303,35 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           )}
         </div>
 
-        {/* Backlinks & Inspector Drawer */}
+        {/* Backlinks & Knowledge Inspector Sidebar */}
         {showInspector && (
-          <aside className="reader-sidebar" style={{ width: 280 }}>
-            <div className="reader-sidebar-header">
-              <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>Knowledge Links</span>
+          <aside
+            style={{
+              width: 260,
+              background: 'var(--bg-surface-elevated)',
+              borderLeft: '1px solid var(--border-subtle)',
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                padding: '10px 14px',
+                borderBottom: '1px solid var(--border-subtle)',
+                background: 'var(--bg-surface)',
+                fontFamily: 'var(--font-tech)',
+                fontWeight: 600,
+                fontSize: 'var(--text-2xs)',
+                letterSpacing: '0.05em',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              KNOWLEDGE LINKS
             </div>
-            <div className="reader-sidebar-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
               {/* Outgoing Wikilinks */}
               <div>
                 <div className="form-label" style={{ marginBottom: 6 }}>
@@ -265,26 +340,27 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 {parsed.wikilinks.length === 0 ? (
                   <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>No outgoing [[links]]</span>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                     {parsed.wikilinks.map(link => (
                       <div
                         key={link}
                         onClick={() => onNavigateNote && onNavigateNote(link)}
                         style={{
-                          padding: '6px 10px',
+                          padding: '5px 8px',
                           background: 'var(--bg-surface)',
                           border: '1px solid var(--border-subtle)',
-                          borderRadius: 'var(--radius-sm)',
+                          borderRadius: 'var(--radius-xs)',
                           fontSize: 'var(--text-xs)',
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
                           gap: 6,
-                          color: 'var(--brand-400)',
+                          color: 'var(--text-primary)',
                         }}
+                        className="card-interactive"
                       >
-                        <ExternalLink size={12} />
-                        [[{link}]]
+                        <ExternalLink size={11} style={{ opacity: 0.6 }} />
+                        <span style={{ fontWeight: 600 }}>[[{link}]]</span>
                       </div>
                     ))}
                   </div>
@@ -297,28 +373,29 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                   BACKLINKS ({backlinksList.length})
                 </div>
                 {backlinksList.length === 0 ? (
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>No backlinks yet</span>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>No backlinks referencing this note</span>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                     {backlinksList.map(b => (
                       <div
                         key={b.id}
                         onClick={() => onNavigateNote && onNavigateNote(b.id)}
                         style={{
-                          padding: '8px 10px',
+                          padding: '6px 8px',
                           background: 'var(--bg-surface)',
                           border: '1px solid var(--border-subtle)',
-                          borderRadius: 'var(--radius-sm)',
+                          borderRadius: 'var(--radius-xs)',
                           fontSize: 'var(--text-xs)',
                           cursor: 'pointer',
                           display: 'flex',
                           flexDirection: 'column',
-                          gap: 2,
+                          gap: 1,
                         }}
+                        className="card-interactive"
                       >
                         <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{b.title}</span>
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
-                          Mentions [[{note.title}]]
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-tech)' }}>
+                          mentions [[{note.title}]]
                         </span>
                       </div>
                     ))}
@@ -333,7 +410,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                   {parsed.tags.map(tag => (
-                    <span key={tag} className="badge badge-brand">
+                    <span key={tag} className="badge">
                       #{tag}
                     </span>
                   ))}
@@ -351,19 +428,31 @@ function renderMarkdownContent(content: string, onNavigate?: (title: string) => 
   const lines = content.split('\n');
   return lines.map((line, idx) => {
     if (line.startsWith('# ')) {
-      return <h1 key={idx} style={{ fontSize: '1.8rem', fontWeight: 800, margin: '20px 0 12px' }}>{line.replace('# ', '')}</h1>;
+      return (
+        <h1 key={idx} style={{ fontFamily: 'var(--font-display)', fontSize: '1.8rem', fontWeight: 800, margin: '20px 0 12px', color: 'var(--text-primary)' }}>
+          {line.replace('# ', '')}
+        </h1>
+      );
     }
     if (line.startsWith('## ')) {
-      return <h2 key={idx} style={{ fontSize: '1.4rem', fontWeight: 700, margin: '16px 0 8px' }}>{line.replace('## ', '')}</h2>;
+      return (
+        <h2 key={idx} style={{ fontFamily: 'var(--font-display)', fontSize: '1.35rem', fontWeight: 700, margin: '16px 0 8px', color: 'var(--text-primary)' }}>
+          {line.replace('## ', '')}
+        </h2>
+      );
     }
     if (line.startsWith('### ')) {
-      return <h3 key={idx} style={{ fontSize: '1.15rem', fontWeight: 600, margin: '12px 0 6px' }}>{line.replace('### ', '')}</h3>;
+      return (
+        <h3 key={idx} style={{ fontFamily: 'var(--font-display)', fontSize: '1.15rem', fontWeight: 600, margin: '12px 0 6px', color: 'var(--text-primary)' }}>
+          {line.replace('### ', '')}
+        </h3>
+      );
     }
     if (line.startsWith('- [ ] ') || line.startsWith('- [x] ')) {
       const checked = line.startsWith('- [x] ');
       const text = line.replace(/- \[[ x]\] /, '');
       return (
-        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' }}>
+        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0', fontSize: '0.95rem' }}>
           <input type="checkbox" checked={checked} readOnly />
           <span style={{ textDecoration: checked ? 'line-through' : 'none', color: checked ? 'var(--text-muted)' : 'inherit' }}>
             {text}
@@ -373,14 +462,14 @@ function renderMarkdownContent(content: string, onNavigate?: (title: string) => 
     }
     if (line.startsWith('- ') || line.startsWith('* ')) {
       return (
-        <li key={idx} style={{ marginLeft: 20, marginBottom: 4 }}>
+        <li key={idx} style={{ marginLeft: 20, marginBottom: 4, fontSize: '0.95rem', lineHeight: 1.6 }}>
           {parseInlineLinks(line.substring(2), onNavigate)}
         </li>
       );
     }
     if (line.startsWith('> ')) {
       return (
-        <blockquote key={idx} style={{ borderLeft: '3px solid var(--brand-500)', paddingLeft: 12, margin: '12px 0', fontStyle: 'italic', color: 'var(--text-secondary)' }}>
+        <blockquote key={idx} style={{ borderLeft: '3px solid var(--text-primary)', paddingLeft: 12, margin: '12px 0', fontStyle: 'italic', color: 'var(--text-secondary)' }}>
           {line.replace('> ', '')}
         </blockquote>
       );
@@ -389,7 +478,7 @@ function renderMarkdownContent(content: string, onNavigate?: (title: string) => 
       return <div key={idx} style={{ height: 10 }} />;
     }
     return (
-      <p key={idx} style={{ marginBottom: 12, lineHeight: 1.7, color: 'var(--text-primary)' }}>
+      <p key={idx} style={{ marginBottom: 12, lineHeight: 1.7, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
         {parseInlineLinks(line, onNavigate)}
       </p>
     );
@@ -406,14 +495,18 @@ function parseInlineLinks(text: string, onNavigate?: (title: string) => void) {
           key={i}
           onClick={() => onNavigate && onNavigate(target)}
           style={{
-            color: 'var(--brand-400)',
-            background: 'rgba(99, 102, 241, 0.15)',
-            padding: '2px 6px',
+            color: 'var(--text-primary)',
+            background: 'var(--bg-surface-elevated)',
+            border: '1px solid var(--border-medium)',
+            padding: '1px 5px',
             borderRadius: 'var(--radius-xs)',
             cursor: 'pointer',
-            fontWeight: 500,
-            borderBottom: '1px dashed var(--brand-500)',
+            fontWeight: 600,
+            fontFamily: 'var(--font-tech)',
+            fontSize: '0.85em',
+            margin: '0 2px',
           }}
+          title={`Jump to [[${target}]]`}
         >
           [[{target}]]
         </span>
@@ -421,7 +514,7 @@ function parseInlineLinks(text: string, onNavigate?: (title: string) => void) {
     }
     if (part.startsWith('#') && part.length > 1) {
       return (
-        <span key={i} className="badge badge-brand" style={{ margin: '0 2px' }}>
+        <span key={i} className="badge" style={{ margin: '0 2px' }}>
           {part}
         </span>
       );
