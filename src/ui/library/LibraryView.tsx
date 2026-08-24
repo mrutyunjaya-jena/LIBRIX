@@ -22,6 +22,8 @@ import { fileBinaryStore } from '../../core/storage/FileBinaryStore';
 import { db } from '../../core/db/DatabaseEngine';
 import { EpubParser } from '../../readers/parsers/EpubParser';
 import { PdfParser } from '../../readers/parsers/PdfParser';
+import { storageRegistry } from '../../storage/StorageRegistry';
+import { cloudVaultSyncService } from '../../storage/sync/CloudVaultSyncService';
 
 interface LibraryViewProps {
   documents: Document[];
@@ -265,6 +267,25 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         }
       }
 
+      // Upload to default storage provider (e.g. Google Drive) if configured and connected
+      const defaultProvider = storageRegistry.getDefaultProvider();
+      let docStorageProvider: StorageProviderType = 'local';
+      let docStoragePath = selectedFolderId ? `/library/${selectedFolderId}/${p.name}` : `/library/${p.name}`;
+      let cloudFileId: string | undefined = undefined;
+
+      if (defaultProvider && defaultProvider.type !== 'local' && defaultProvider.isConnected() && p.data) {
+        try {
+          const targetFolderPath = await cloudVaultSyncService.getFolderPathString(selectedFolderId, '/LIBRIX/Library');
+          const uploadRes = await defaultProvider.upload(targetFolderPath, p.name, p.data, mimeType);
+          docStorageProvider = defaultProvider.type;
+          docStoragePath = uploadRes.path || `${targetFolderPath}/${uploadRes.name}`;
+          cloudFileId = uploadRes.id;
+          await cloudVaultSyncService.saveMasterVaultCatalog(defaultProvider).catch(() => {});
+        } catch (cloudUpErr) {
+          console.warn(`Could not upload ${p.name} directly to ${defaultProvider.name}:`, cloudUpErr);
+        }
+      }
+
       imported.push({
         id: docId,
         title: docTitle,
@@ -274,8 +295,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         mimeType,
         size: p.data?.length || 1024000,
         hash: 'hash_' + Date.now(),
-        storageProvider: 'local' as StorageProviderType,
-        storagePath: selectedFolderId ? `/library/${selectedFolderId}/${p.name}` : `/library/${p.name}`,
+        storageProvider: docStorageProvider,
+        storagePath: docStoragePath,
+        cloudFileId,
         folderId: selectedFolderId,
         isFavorite: false,
         isTrash: false,

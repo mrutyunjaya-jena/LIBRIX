@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { IReaderProps, ReaderSettings, TocItem } from './ReaderInterface';
 import { db } from '../core/db/DatabaseEngine';
-import { Annotation, Bookmark, HighlightStyle } from '../core/types';
+import { Document, Annotation, Bookmark, HighlightStyle } from '../core/types';
 import { usePlatform } from '../platform/PlatformContext';
 import { DocumentDataLoader } from '../core/storage/DocumentDataLoader';
 import { EpubParser, ParsedEpubChapter } from './parsers/EpubParser';
@@ -45,6 +45,18 @@ export const EpubReader: React.FC<IReaderProps> = ({
     textAlign: 'left',
     brightness: 100,
   });
+
+  const getInitialChapter = (doc: Document, totalChapters: number): number => {
+    if (doc.readingProgress?.currentLocation) {
+      const parsed = parseInt(doc.readingProgress.currentLocation.replace(/\D/g, ''), 10);
+      if (!isNaN(parsed) && parsed >= 1) return Math.min(totalChapters - 1, Math.max(0, parsed - 1));
+    }
+    if (doc.readingProgress?.percentage && totalChapters > 0) {
+      const idx = Math.round((doc.readingProgress.percentage / 100) * totalChapters) - 1;
+      return Math.min(totalChapters - 1, Math.max(0, idx));
+    }
+    return 0;
+  };
 
   // State
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
@@ -79,6 +91,8 @@ export const EpubReader: React.FC<IReaderProps> = ({
           if (parsed.chapters && parsed.chapters.length > 0) {
             setChapters(parsed.chapters);
             setToc(parsed.toc);
+            const targetCh = getInitialChapter(document, parsed.chapters.length);
+            setCurrentChapterIndex(targetCh);
             setIsLoadingBook(false);
             return;
           }
@@ -97,6 +111,7 @@ export const EpubReader: React.FC<IReaderProps> = ({
           },
         ]);
         setToc([{ id: 'toc_1', label: document.title, href: '#ch_1' }]);
+        setCurrentChapterIndex(0);
       } else {
         setChapters([
           {
@@ -106,6 +121,7 @@ export const EpubReader: React.FC<IReaderProps> = ({
           },
         ]);
         setToc([{ id: 'toc_1', label: document.title, href: '#ch_1' }]);
+        setCurrentChapterIndex(0);
       }
       setIsLoadingBook(false);
     };
@@ -128,12 +144,13 @@ export const EpubReader: React.FC<IReaderProps> = ({
   // Update progress and reset scroll
   useEffect(() => {
     if (chapters.length === 0) return;
-    const progress = Math.round(((currentChapterIndex + 1) / chapters.length) * 100);
+    const progress = Math.min(100, Math.max(1, Math.round(((currentChapterIndex + 1) / chapters.length) * 100)));
     onProgressUpdate(progress, `chapter-${currentChapterIndex + 1}`);
+    db.updateReadingProgress(document.id, { percentage: progress, currentLocation: `chapter-${currentChapterIndex + 1}` });
     if (contentRef.current) {
       contentRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, [currentChapterIndex, chapters.length]);
+  }, [currentChapterIndex, chapters.length, document.id]);
 
   // Handle Text Selection for Highlighting
   const checkSelection = useCallback(() => {

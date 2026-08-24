@@ -29,7 +29,7 @@ import {
 import * as pdfjsLib from 'pdfjs-dist';
 import { IReaderProps } from './ReaderInterface';
 import { db } from '../core/db/DatabaseEngine';
-import { Bookmark, Annotation, HighlightStyle } from '../core/types';
+import { Document, Bookmark, Annotation, HighlightStyle } from '../core/types';
 import { usePlatform } from '../platform/PlatformContext';
 import { DocumentDataLoader } from '../core/storage/DocumentDataLoader';
 import { PdfParser, ParsedPdfPage } from './parsers/PdfParser';
@@ -41,7 +41,16 @@ export const PdfReader: React.FC<IReaderProps> = ({
   onOpenLibris,
 }) => {
   const platform = usePlatform();
-  const [currentPage, setCurrentPage] = useState(1);
+
+  const getInitialPage = (doc: Document): number => {
+    if (doc.readingProgress?.currentLocation) {
+      const parsed = parseInt(doc.readingProgress.currentLocation.replace(/\D/g, ''), 10);
+      if (!isNaN(parsed) && parsed >= 1) return parsed;
+    }
+    return 1;
+  };
+
+  const [currentPage, setCurrentPage] = useState<number>(() => getInitialPage(document));
   const [totalPages, setTotalPages] = useState(1);
   const [pages, setPages] = useState<ParsedPdfPage[]>([]);
   const [pageTextMap, setPageTextMap] = useState<Record<number, string>>({});
@@ -130,6 +139,8 @@ export const PdfReader: React.FC<IReaderProps> = ({
             if (parsed.pages && parsed.pages.length > 0) {
               setPages(parsed.pages);
               setTotalPages(parsed.numPages);
+              const targetPage = Math.min(parsed.numPages, Math.max(1, getInitialPage(document)));
+              setCurrentPage(targetPage);
               const initialMap: Record<number, string> = {};
               parsed.pages.forEach(p => {
                 initialMap[p.pageNumber] = p.textContent;
@@ -149,6 +160,8 @@ export const PdfReader: React.FC<IReaderProps> = ({
           const splitPages = splitTextIntoPages(document.contentSnippet);
           setPages(splitPages);
           setTotalPages(splitPages.length);
+          const targetPage = Math.min(splitPages.length, Math.max(1, getInitialPage(document)));
+          setCurrentPage(targetPage);
           const initialMap: Record<number, string> = {};
           splitPages.forEach(p => {
             initialMap[p.pageNumber] = p.textContent;
@@ -187,12 +200,13 @@ export const PdfReader: React.FC<IReaderProps> = ({
   // Progress Update & Scroll Reset
   useEffect(() => {
     if (totalPages <= 0) return;
-    const progress = Math.round((currentPage / totalPages) * 100);
+    const progress = Math.min(100, Math.max(1, Math.round((currentPage / totalPages) * 100)));
     onProgressUpdate(progress, `page-${currentPage}`);
+    db.updateReadingProgress(document.id, { percentage: progress, currentLocation: `page-${currentPage}` });
     if (stageRef.current) {
       stageRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, [currentPage, totalPages]);
+  }, [currentPage, totalPages, document.id]);
 
   // On-demand Text Extraction for active currentPage
   useEffect(() => {

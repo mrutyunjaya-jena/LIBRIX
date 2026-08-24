@@ -17,6 +17,7 @@ import { StorageProviderType } from '../../core/types';
 import { IPlatformServices } from '../../platform/PlatformInterface';
 import { googleOAuthService, GoogleOAuthTokens } from '../oauth/GoogleOAuthService';
 import { googleOAuthConfig } from '../oauth/GoogleOAuthConfig';
+import { cloudVaultSyncService } from '../sync/CloudVaultSyncService';
 
 export type GoogleDriveConnectionStatus =
   | 'disconnected'
@@ -352,6 +353,16 @@ export class GoogleDriveProvider implements IStorageProvider {
 
     gdLog('connection_established', { account: this.state.account?.email });
     onProgress?.('Google Drive connected.');
+
+    // Automatically synchronize & fetch /LIBRIX/Library and /LIBRIX/Notes in background
+    setTimeout(async () => {
+      try {
+        await cloudVaultSyncService.syncFromCloudOnLogin(this);
+      } catch (syncErr) {
+        console.warn('[LIBRIX::GoogleDrive] Post-login auto-sync:', syncErr);
+      }
+    }, 100);
+
     return true;
   }
 
@@ -643,11 +654,25 @@ export class GoogleDriveProvider implements IStorageProvider {
     };
   }
 
-  async listFiles(_folderPath = ''): Promise<StorageItem[]> {
+  async listFiles(folderPath = '/LIBRIX'): Promise<StorageItem[]> {
     if (!this.isConnected()) return [];
     try {
+      let parentQuery = '';
+      if (folderPath && folderPath !== '/' && folderPath !== 'root') {
+        const parentId = await this.getOrCreateFolderPath(folderPath);
+        if (!parentId) return []; // Folder does not exist, return empty
+        parentQuery = `'${parentId}' in parents and `;
+      } else {
+        const rootVaultId = await this.getOrCreateFolderPath('/LIBRIX');
+        if (rootVaultId) {
+          parentQuery = `'${rootVaultId}' in parents and `;
+        } else {
+          parentQuery = "'root' in parents and ";
+        }
+      }
+
       const query = encodeURIComponent(
-        "trashed = false and (mimeType = 'application/pdf' or mimeType = 'application/epub+zip' or mimeType = 'application/vnd.google-apps.folder' or mimeType contains 'text/')"
+        `${parentQuery}trashed = false`
       );
       const res = await this.makeRequest(
         `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType,size,modifiedTime)&pageSize=100`
@@ -676,13 +701,108 @@ export class GoogleDriveProvider implements IStorageProvider {
     throw new Error(`Google Drive download failed with HTTP ${res.status}.`);
   }
 
+  private folderCache = new Map<string, string>();
+
+  /** Clears cached folder path mappings */
+  public clearFolderCache(): void {
+    this.folderCache.clear();
+  }
+
+  /**
+   * Finds or creates a specific folder on Google Drive.
+   */
+  public async findOrCreateFolder(name: string, parentFolderId?: string): Promise<string> {
+    const parentQuery = (parentFolderId && parentFolderId !== 'root') ? `'${parentFolderId}' in parents and ` : "'root' in parents and ";
+    const escapedName = name.replace(/'/g, "\\'");
+    const q = `${parentQuery}mimeType = 'application/vnd.google-apps.folder' and trashed = false and name = '${escapedName}'`;
+
+    try {
+      const res = await this.makeRequest(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,parents)`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.files && data.files.length > 0) {
+          return data.files[0].id;
+        }
+      }
+    } catch (searchErr) {
+      console.warn(`[LIBRIX::GoogleDrive] Folder search for "${name}" error:`, searchErr);
+    }
+
+    // Create the folder on Google Drive (omitting parents puts it in top-level My Drive)
+    const createBody: any = {
+      name,
+      mimeType: 'application/vnd.google-apps.folder',
+    };
+    if (parentFolderId && parentFolderId !== 'root') {
+      createBody.parents = [parentFolderId];
+    }
+
+    const createRes = await this.makeRequest('https://www.googleapis.com/drive/v3/files?fields=id,name', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(createBody),
+    });
+
+    if (!createRes.ok) {
+      const errText = await createRes.text().catch(() => '');
+      console.error(`[LIBRIX::GoogleDrive] Failed to create folder "${name}":`, createRes.status, errText);
+      throw new Error(`Google Drive failed to create folder "${name}" (${createRes.status}): ${errText || createRes.statusText}`);
+    }
+
+    const created = await createRes.json();
+    console.info(`[LIBRIX::GoogleDrive] Successfully created Google Drive folder "${name}" (ID: ${created.id})`);
+    return created.id;
+  }
+
+  /**
+   * Resolves a POSIX-like folder path (e.g. '/LIBRIX/Library') into a Google Drive Folder ID.
+   * If folders don't exist on Google Drive, creates the hierarchy automatically.
+   */
+  public async getOrCreateFolderPath(folderPath: string): Promise<string | undefined> {
+    if (!folderPath || folderPath === '/' || folderPath === 'root') {
+      return undefined;
+    }
+
+    // If already a Google Drive folder ID
+    if (!folderPath.includes('/') && folderPath.length > 15) {
+      return folderPath;
+    }
+
+    const cleanPath = folderPath.replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
+    const cached = this.folderCache.get(cleanPath) || this.folderCache.get('/' + cleanPath);
+    if (cached) return cached;
+
+    const segments = cleanPath.split('/').filter(s => s.trim().length > 0);
+    if (segments.length === 0) return undefined;
+
+    let currentParentId: string | undefined = undefined;
+
+    for (const segment of segments) {
+      const folderId = await this.findOrCreateFolder(segment, currentParentId);
+      currentParentId = folderId;
+    }
+
+    if (currentParentId) {
+      this.folderCache.set(cleanPath, currentParentId);
+      this.folderCache.set('/' + cleanPath, currentParentId);
+    }
+    return currentParentId;
+  }
+
   async upload(folderPath: string, filename: string, data: Uint8Array, mimeType?: string): Promise<StorageItem> {
+    const parentId = await this.getOrCreateFolderPath(folderPath);
     const resolvedMime = mimeType || 'application/octet-stream';
-    const metadata = {
+    const metadata: any = {
       name: filename,
       mimeType: resolvedMime,
-      parents: folderPath ? [folderPath] : undefined,
     };
+    if (parentId) {
+      metadata.parents = [parentId];
+    } else if (folderPath && folderPath !== '/' && folderPath !== 'root') {
+      throw new Error(`Could not find or create Google Drive folder "${folderPath}" for upload.`);
+    }
 
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -707,34 +827,23 @@ export class GoogleDriveProvider implements IStorageProvider {
         providerId: this.id,
       };
     }
-    throw new Error(`Google Drive upload failed with HTTP ${res.status}.`);
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Google Drive upload failed (${res.status}): ${errText || res.statusText}`);
   }
 
   async createFolder(folderPath: string, name: string): Promise<StorageItem> {
-    const res = await this.makeRequest('https://www.googleapis.com/drive/v3/files', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name,
-        mimeType: 'application/vnd.google-apps.folder',
-        parents: folderPath ? [folderPath] : undefined,
-      }),
-    });
-
-    if (res.ok) {
-      const folder = await res.json();
-      return {
-        id: folder.id,
-        name,
-        path: folder.id,
-        size: 0,
-        isDirectory: true,
-        modifiedAt: Date.now(),
-        providerType: 'gdrive',
-        providerId: this.id,
-      };
-    }
-    throw new Error(`Google Drive create folder failed with HTTP ${res.status}.`);
+    const parentId = await this.getOrCreateFolderPath(folderPath);
+    const folderId = await this.findOrCreateFolder(name, parentId);
+    return {
+      id: folderId,
+      name,
+      path: folderId,
+      size: 0,
+      isDirectory: true,
+      modifiedAt: Date.now(),
+      providerType: 'gdrive',
+      providerId: this.id,
+    };
   }
 
   async renameFile(itemPath: string, newName: string): Promise<StorageItem> {
@@ -787,7 +896,16 @@ export class GoogleDriveProvider implements IStorageProvider {
   }
 
   async delete(itemPath: string): Promise<void> {
-    const res = await this.makeRequest(`https://www.googleapis.com/drive/v3/files/${itemPath}`, {
+    let fileId = itemPath;
+    if (itemPath.includes('/') || itemPath.includes('.')) {
+      const fileName = itemPath.split('/').pop() || itemPath;
+      const found = await this.search(fileName);
+      if (found.length > 0) {
+        fileId = found[0].id;
+      }
+    }
+
+    const res = await this.makeRequest(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
       method: 'DELETE',
     });
     if (!res.ok && res.status !== 404) {

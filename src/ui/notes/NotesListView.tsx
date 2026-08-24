@@ -17,6 +17,8 @@ import {
 import { Note } from '../../core/types';
 import { db } from '../../core/db/DatabaseEngine';
 import { MarkdownEditor } from '../../notes/MarkdownEditor';
+import { storageRegistry } from '../../storage/StorageRegistry';
+import { cloudVaultSyncService } from '../../storage/sync/CloudVaultSyncService';
 
 interface NotesListViewProps {
   notes: Note[];
@@ -132,7 +134,21 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
   const handleDeleteNote = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm('Delete this note permanently?')) {
+      const noteToDelete = await db.getNoteById(id);
       await db.deleteNote(id);
+
+      // Remove from connected cloud providers
+      try {
+        const cloudProviders = storageRegistry.getAllProviders().filter(p => p.type !== 'local' && p.isConnected());
+        for (const provider of cloudProviders) {
+          const safeTitle = (noteToDelete?.title || 'Untitled_Note').replace(/[/\\?%*:|"<>]/g, '_');
+          await provider.delete(`${safeTitle}.md`).catch(() => {});
+          await cloudVaultSyncService.saveMasterVaultCatalog(provider).catch(() => {});
+        }
+      } catch (cloudErr) {
+        console.warn('Could not delete note from cloud storage:', cloudErr);
+      }
+
       if (activeNote?.id === id) setActiveNote(null);
       onNotesUpdated();
     }

@@ -57,12 +57,21 @@ export class StorageRegistry {
   }
 
   public getDefaultProvider(): IStorageProvider {
+    const persisted = typeof localStorage !== 'undefined' ? localStorage.getItem('librix_default_storage_provider') : null;
+    if (persisted) {
+      const match = this.providers.get(persisted) || Array.from(this.providers.values()).find(p => p.id === persisted || p.type === persisted);
+      if (match) return match;
+    }
     return this.providers.get(this.defaultProviderId) || this.providers.values().next().value!;
   }
 
   public setDefaultProvider(id: string): void {
-    if (this.providers.has(id)) {
-      this.defaultProviderId = id;
+    const match = this.providers.get(id) || Array.from(this.providers.values()).find(p => p.id === id || p.type === id);
+    if (match) {
+      this.defaultProviderId = match.id;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('librix_default_storage_provider', match.id);
+      }
     }
   }
 

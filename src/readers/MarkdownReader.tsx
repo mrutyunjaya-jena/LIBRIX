@@ -32,9 +32,9 @@ export const MarkdownReader: React.FC<IReaderProps & { onNavigateWikilink?: (tit
   const [selectedText, setSelectedText] = useState('');
   const [selectionPos, setSelectionPos] = useState<{ x: number; y: number } | null>(null);
   const selectedTextRef = useRef<string>('');
+  const stageRef = useRef<HTMLElement>(null);
 
   const loadData = async () => {
-    onProgressUpdate(100, 'end');
     const bmarks = await db.getBookmarks(document.id);
     if (bmarks.length > 0) {
       setIsBookmarked(true);
@@ -42,11 +42,30 @@ export const MarkdownReader: React.FC<IReaderProps & { onNavigateWikilink?: (tit
     }
     const annots = await db.getAnnotations(document.id);
     setAnnotations(annots);
+
+    // Restore saved scroll position
+    if (document.readingProgress?.percentage && stageRef.current) {
+      const stage = stageRef.current;
+      setTimeout(() => {
+        const targetScroll = (document.readingProgress!.percentage / 100) * (stage.scrollHeight - stage.clientHeight);
+        stage.scrollTo({ top: targetScroll, behavior: 'smooth' });
+      }, 100);
+    }
   };
 
   useEffect(() => {
     loadData();
   }, [document.id]);
+
+  const handleScroll = () => {
+    if (!stageRef.current) return;
+    const stage = stageRef.current;
+    const totalScroll = stage.scrollHeight - stage.clientHeight;
+    if (totalScroll <= 0) return;
+    const progress = Math.min(100, Math.max(1, Math.round((stage.scrollTop / totalScroll) * 100)));
+    onProgressUpdate(progress, `scroll-${progress}%`);
+    db.updateReadingProgress(document.id, { percentage: progress, currentLocation: `scroll-${progress}%` });
+  };
 
   const handleSelectionChange = () => {
     const sel = window.getSelection();
@@ -337,7 +356,7 @@ export const MarkdownReader: React.FC<IReaderProps & { onNavigateWikilink?: (tit
 
       {/* Main Content & Annotations Drawer */}
       <div className="reader-viewport">
-        <main className="reader-stage selectable">
+        <main className="reader-stage selectable" ref={stageRef as any} onScroll={handleScroll}>
           <div className="reader-content-frame" style={{ maxWidth: 780 }}>
             {/* Tag Pills */}
             {document.tags.length > 0 && (

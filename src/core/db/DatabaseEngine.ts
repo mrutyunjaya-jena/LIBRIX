@@ -79,39 +79,36 @@ export class DatabaseEngine {
   private loadFromStorage(): void {
     if (typeof localStorage === 'undefined') return;
     try {
-      const loadTable = <T extends { id: string }>(key: string, map: Map<string, T>, filterDemo = true) => {
+      const loadTable = <T extends { id: string }>(key: string, map: Map<string, T>) => {
         const raw = localStorage.getItem(key);
         if (raw) {
-          const items: T[] = JSON.parse(raw);
-          items.forEach(i => {
-            // Filter out old demo seeds
-            if (filterDemo && (
-              i.id.startsWith('doc-') ||
-              i.id.startsWith('note-') ||
-              i.id.startsWith('annot-') ||
-              i.id.startsWith('fld-') ||
-              i.id.startsWith('col-') ||
-              i.id.startsWith('tag-')
-            )) {
-              return;
+          try {
+            const items: T[] = JSON.parse(raw);
+            if (Array.isArray(items)) {
+              items.forEach(i => {
+                if (i && i.id) {
+                  map.set(i.id, i);
+                }
+              });
             }
-            map.set(i.id, i);
-          });
+          } catch (parseErr) {
+            console.warn(`Failed to parse ${key} from storage:`, parseErr);
+          }
         }
       };
 
-      loadTable('librix_db_docs', this.documents, true);
-      loadTable('librix_db_folders', this.folders, true);
-      loadTable('librix_db_cols', this.collections, true);
-      loadTable('librix_db_tags', this.tags, true);
-      loadTable('librix_db_bmarks', this.bookmarks, true);
-      loadTable('librix_db_annots', this.annotations, true);
-      loadTable('librix_db_notes', this.notes, true);
-      loadTable('librix_db_clouds', this.cloudConnections, false);
-      loadTable('librix_db_sync_q', this.syncQueue, false);
-      loadTable('librix_db_conflicts', this.syncConflicts, false);
-      loadTable('librix_db_chats', this.chatSessions, false);
-      loadTable('librix_db_aiproviders', this.aiProviders, false);
+      loadTable('librix_db_docs', this.documents);
+      loadTable('librix_db_folders', this.folders);
+      loadTable('librix_db_cols', this.collections);
+      loadTable('librix_db_tags', this.tags);
+      loadTable('librix_db_bmarks', this.bookmarks);
+      loadTable('librix_db_annots', this.annotations);
+      loadTable('librix_db_notes', this.notes);
+      loadTable('librix_db_clouds', this.cloudConnections);
+      loadTable('librix_db_sync_q', this.syncQueue);
+      loadTable('librix_db_conflicts', this.syncConflicts);
+      loadTable('librix_db_chats', this.chatSessions);
+      loadTable('librix_db_aiproviders', this.aiProviders);
     } catch (e) {
       console.error('Failed to load database from storage:', e);
     }

@@ -29,6 +29,8 @@ import { SlashMenu, SlashMenuItem } from './SlashMenu';
 import { FloatingFormatToolbar } from './FloatingFormatToolbar';
 import { CanvasBlock, BlockEngine, BlockType, NotionBlock, NotionBlockEngine, NotionBlockType } from './BlockEngine';
 import { LiveBlockItem } from './LiveBlockItem';
+import { storageRegistry } from '../storage/StorageRegistry';
+import { cloudVaultSyncService } from '../storage/sync/CloudVaultSyncService';
 
 interface MarkdownEditorProps {
   note: Note;
@@ -176,6 +178,21 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     };
 
     await db.saveNote(updatedNote);
+
+    // Sync to default cloud provider if configured and connected
+    const defaultProvider = storageRegistry.getDefaultProvider();
+    if (defaultProvider && defaultProvider.type !== 'local' && defaultProvider.isConnected()) {
+      try {
+        const targetFolderPath = await cloudVaultSyncService.getFolderPathString(updatedNote.folderId, '/LIBRIX/Notes');
+        const safeTitle = (updatedNote.title || 'Untitled_Note').replace(/[/\\?%*:|"<>]/g, '_');
+        const noteBytes = new TextEncoder().encode(updatedNote.content);
+        await defaultProvider.upload(targetFolderPath, `${safeTitle}.md`, noteBytes, 'text/markdown');
+        await cloudVaultSyncService.saveMasterVaultCatalog(defaultProvider).catch(() => {});
+      } catch (cloudErr) {
+        console.warn('Could not sync note to default cloud provider:', cloudErr);
+      }
+    }
+
     onSave(updatedNote);
     setIsSaved(true);
   };

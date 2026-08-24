@@ -15,6 +15,9 @@ import { FirstRunOnboarding } from '../onboarding/FirstRunOnboarding';
 import { Document, Folder, Note, CloudConnection } from '../../core/types';
 import { db } from '../../core/db/DatabaseEngine';
 import { usePlatform } from '../../platform/PlatformContext';
+import { storageRegistry } from '../../storage/StorageRegistry';
+import { cloudVaultSyncService } from '../../storage/sync/CloudVaultSyncService';
+import { fileBinaryStore } from '../../core/storage/FileBinaryStore';
 
 export const AppShell: React.FC = () => {
   const platform = usePlatform();
@@ -95,12 +98,31 @@ export const AppShell: React.FC = () => {
     }
   };
 
-  // Sync Trigger Simulation
+  // Sync Trigger
   const handleTriggerSync = async () => {
     setIsSyncing(true);
-    await new Promise(r => setTimeout(r, 1200));
-    await reloadData();
-    setIsSyncing(false);
+    try {
+      const providers = storageRegistry.getAllProviders().filter(p => p.type !== 'local' && p.isConnected());
+      let totalImportedDocs = 0;
+      let totalImportedNotes = 0;
+
+      for (const provider of providers) {
+        const res = await cloudVaultSyncService.syncFromCloudOnLogin(provider);
+        totalImportedDocs += res.importedDocuments;
+        totalImportedNotes += res.importedNotes;
+      }
+
+      await reloadData();
+      if (totalImportedDocs > 0 || totalImportedNotes > 0) {
+        platform.notifications.show('Cloud Vault Synchronized', {
+          body: `Fetched ${totalImportedDocs} books and ${totalImportedNotes} notes from cloud.`,
+        });
+      }
+    } catch (e) {
+      console.warn('Sync error in AppShell:', e);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // Folder Actions
@@ -153,6 +175,25 @@ export const AppShell: React.FC = () => {
   };
 
   const handleConfirmDeleteDoc = async (docId: string, permanent: boolean) => {
+    const doc = await db.getDocumentById(docId);
+    if (doc) {
+      // 1. Delete binary blob locally
+      await fileBinaryStore.deleteFileBlob(docId).catch(() => {});
+
+      // 2. If document is on cloud (or permanent delete), remove from cloud provider
+      if (permanent && doc.storageProvider && doc.storageProvider !== 'local') {
+        try {
+          const provider = storageRegistry.getProvider(doc.storageProvider);
+          if (provider && provider.isConnected()) {
+            await provider.delete(doc.cloudFileId || doc.storagePath || doc.filename).catch(() => {});
+            await cloudVaultSyncService.saveMasterVaultCatalog(provider).catch(() => {});
+          }
+        } catch (cloudDelErr) {
+          console.warn('Could not delete document from cloud:', cloudDelErr);
+        }
+      }
+    }
+
     await db.deleteDocument(docId, permanent);
     setDeleteTargetDoc(null);
     await reloadData();
@@ -163,6 +204,11 @@ export const AppShell: React.FC = () => {
       await db.saveDocument(d as Document);
     }
     await reloadData();
+  };
+
+  const handleOpenDocument = async (doc: Document) => {
+    const latestDoc = (await db.getDocumentById(doc.id)) || doc;
+    setActiveReadingDoc(latestDoc);
   };
 
   return (
@@ -191,7 +237,7 @@ export const AppShell: React.FC = () => {
           cloudCount={clouds.filter(c => c.status === 'connected').length}
         />
 
-        {/* Tab Views */}
+        {/* Dynamic Main Stage */}
         <main style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
           {activeTab === 'library' && (
             <LibraryView
@@ -199,7 +245,7 @@ export const AppShell: React.FC = () => {
               folders={folders}
               selectedFolderId={selectedFolderId}
               onSelectFolder={setSelectedFolderId}
-              onOpenDocument={doc => setActiveReadingDoc(doc)}
+              onOpenDocument={handleOpenDocument}
               onToggleFavorite={handleToggleFavorite}
               onDeleteRequest={doc => setDeleteTargetDoc(doc)}
               onOpenLibris={doc => {
@@ -302,7 +348,7 @@ export const AppShell: React.FC = () => {
           notes={notes}
           onClose={() => setShowCommandPalette(false)}
           onSelectDocument={doc => {
-            setActiveReadingDoc(doc);
+            handleOpenDocument(doc);
             setShowCommandPalette(false);
           }}
           onSelectNote={note => {

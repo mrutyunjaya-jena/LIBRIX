@@ -250,13 +250,29 @@ export class LocalStorageProvider implements IStorageProvider {
     };
   }
 
-  async delete(itemPath: string, _permanent = false): Promise<void> {
+  async delete(itemPath: string, permanent = true): Promise<void> {
     await fileBinaryStore.deleteFileBlob(itemPath);
-    await db.deleteDocument(itemPath);
+    await db.deleteDocument(itemPath, permanent);
     try {
       await this.platform.fileSystem.deleteFile(itemPath);
     } catch {
       // ignore
+    }
+  }
+
+  async testConnection(): Promise<{ success: boolean; error?: string; message?: string; quota?: StorageQuota }> {
+    try {
+      const quota = await this.getQuota();
+      return {
+        success: true,
+        message: `Local Workstation & IndexedDB storage operational • ${Math.round((quota.used / Math.max(1, quota.total)) * 100)}% disk used`,
+        quota,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.message || 'Local storage check failed',
+      };
     }
   }
 

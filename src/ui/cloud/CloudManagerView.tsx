@@ -22,6 +22,8 @@ import {
   Sparkles,
   Server,
   Key,
+  Upload,
+  FolderPlus,
 } from 'lucide-react';
 import { CloudConnection, StorageProviderType, Document } from '../../core/types';
 import { db } from '../../core/db/DatabaseEngine';
@@ -35,7 +37,9 @@ import { EpubParser } from '../../readers/parsers/EpubParser';
 import { StorageCapacityFactory, VolumeStorageInfo } from '../../storage/capacity/StorageCapacityService';
 import { storageUsageIndex, LibrixStorageUsageBreakdown } from '../../storage/usage/StorageUsageIndex';
 import { crossProviderTransfer, TransferProgress } from '../../storage/transfer/CrossProviderTransferEngine';
+import { vaultMigrationService, MigrationProgress, MigrationResult } from '../../storage/transfer/VaultMigrationService';
 import { CustomProtocolType } from '../../storage/providers/CustomStorageProvider';
+import { cloudVaultSyncService } from '../../storage/sync/CloudVaultSyncService';
 
 interface CloudManagerViewProps {
   connections: CloudConnection[];
@@ -100,6 +104,15 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
   const [transferOperation, setTransferOperation] = useState<'copy' | 'move'>('copy');
   const [transferProgress, setTransferProgress] = useState<TransferProgress | null>(null);
   const [isTransferring, setIsTransferring] = useState(false);
+
+  // Vault Migration Modal State
+  const [showMigrationModal, setShowMigrationModal] = useState(false);
+  const [migrationTargetConnId, setMigrationTargetConnId] = useState<string>('');
+  const [migrationOperation, setMigrationOperation] = useState<'copy' | 'move'>('copy');
+  const [migrationProgress, setMigrationProgress] = useState<MigrationProgress | null>(null);
+  const [migrationResult, setMigrationResult] = useState<MigrationResult | null>(null);
+  const [isMigratingVault, setIsMigratingVault] = useState(false);
+  const [localCounts, setLocalCounts] = useState<{ docs: number; notes: number }>({ docs: 0, notes: 0 });
 
   const formatBytes = (bytes?: number) => {
     if (!bytes || bytes <= 0) return '0 B';
@@ -222,11 +235,15 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
   }, [connections.length]);
 
   const handleSetDefaultProvider = async (connId: string) => {
+    const targetConn = connections.find(c => c.id === connId);
     for (const c of connections) {
       c.isDefault = c.id === connId;
       await db.saveCloudConnection(c);
     }
     storageRegistry.setDefaultProvider(connId);
+    if (targetConn?.providerType) {
+      storageRegistry.setDefaultProvider(targetConn.providerType);
+    }
     onConnectionsUpdated();
   };
 
@@ -249,7 +266,7 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
   const [connectingStatus, setConnectingStatus] = useState<string | null>(null);
   const [connectingError, setConnectingError] = useState<string | null>(null);
   const [testingConnId, setTestingConnId] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ id: string; success: boolean; message: string; url?: string } | null>(null);
 
   const handleConnectPopularProvider = async (
     directToken?: string,
@@ -524,6 +541,60 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
     }
   };
 
+  const handleEnsureCloudFolder = async (conn: CloudConnection) => {
+    const provider = resolveProvider(conn);
+    if (!provider) return;
+    setTestingConnId(conn.id);
+    try {
+      if (!provider.isConnected()) {
+        await provider.authenticate();
+      }
+
+      if (typeof (provider as any).clearFolderCache === 'function') {
+        (provider as any).clearFolderCache();
+      }
+
+      let rootId = '';
+      let libraryId = '';
+      let notesId = '';
+
+      if (typeof (provider as any).findOrCreateFolder === 'function') {
+        rootId = await (provider as any).findOrCreateFolder('LIBRIX');
+        libraryId = await (provider as any).findOrCreateFolder('Library', rootId);
+        notesId = await (provider as any).findOrCreateFolder('Notes', rootId);
+      } else {
+        const structure = await cloudVaultSyncService.ensureRootVaultStructure(provider);
+        rootId = structure.rootFolderId || '';
+        libraryId = structure.libraryFolderId || '';
+        notesId = structure.notesFolderId || '';
+      }
+
+      // Auto-migrate local documents and notes into the newly created folders
+      const migrationResult = await vaultMigrationService.migrateLocalVaultToCloud(provider, 'copy');
+
+      // Save master index
+      await cloudVaultSyncService.saveMasterVaultCatalog(provider);
+
+      const folderUrl = rootId ? `https://drive.google.com/drive/folders/${rootId}` : undefined;
+
+      setTestResult({
+        id: conn.id,
+        success: true,
+        message: `Vault initialized on ${conn.name}! Created /LIBRIX, /LIBRIX/Library, /LIBRIX/Notes. Synced ${migrationResult.migratedDocuments} document(s) and ${migrationResult.migratedNotes} note(s).`,
+        url: folderUrl,
+      });
+      await refreshAllStorageData();
+    } catch (e: any) {
+      setTestResult({
+        id: conn.id,
+        success: false,
+        message: 'Vault initialization error: ' + (e?.message || e),
+      });
+    } finally {
+      setTestingConnId(null);
+    }
+  };
+
   const handleBrowseFiles = async (conn: CloudConnection) => {
     setBrowsingConnection(conn);
     setIsLoadingFiles(true);
@@ -645,6 +716,79 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
     }
   };
 
+  const handleOpenMigrationModal = async () => {
+    const allDocs = await db.getDocuments({ filterTrash: false });
+    const allNotes = await db.getNotes();
+    setLocalCounts({ docs: allDocs.length, notes: allNotes.length });
+
+    const cloudConns = connections.filter(c => c.providerType !== 'local' && c.status === 'connected');
+    setMigrationTargetConnId(cloudConns[0]?.id || connections.find(c => c.providerType !== 'local')?.id || connections[0]?.id || '');
+    setMigrationProgress(null);
+    setMigrationResult(null);
+    setShowMigrationModal(true);
+  };
+
+  const handleExecuteVaultMigration = async () => {
+    if (!migrationTargetConnId) return;
+    setIsMigratingVault(true);
+    setMigrationResult(null);
+
+    try {
+      const targetConn = connections.find(c => c.id === migrationTargetConnId);
+      const provider = targetConn ? resolveProvider(targetConn) : storageRegistry.getProvider(migrationTargetConnId);
+
+      if (!provider) {
+        alert('Could not resolve selected cloud provider. Please verify your cloud connection.');
+        setIsMigratingVault(false);
+        return;
+      }
+
+      const result = await vaultMigrationService.migrateLocalVaultToCloud(
+        provider,
+        migrationOperation,
+        progress => setMigrationProgress(progress)
+      );
+
+      setMigrationResult(result);
+      platform.notifications.show('Vault Migration Complete', {
+        body: `Migrated ${result.migratedDocuments} books and ${result.migratedNotes} notes to ${targetConn?.name || 'Cloud'}.`,
+      });
+      onConnectionsUpdated();
+      refreshAllStorageData();
+    } catch (err: any) {
+      alert(`Migration error: ${err?.message || err}`);
+    } finally {
+      setIsMigratingVault(false);
+    }
+  };
+
+  const uploadFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleUploadToBrowsingStorage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !browsingConnection) return;
+    try {
+      setIsLoadingFiles(true);
+      const provider = resolveProvider(browsingConnection);
+      if (!provider) throw new Error('Storage provider not available');
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuffer);
+      await provider.upload('', file.name, uint8, file.type || 'application/pdf');
+      const files = await provider.listFiles();
+      setCloudItems(files);
+      await refreshAllStorageData();
+      onConnectionsUpdated();
+      platform.notifications.show('File Saved', {
+        body: `Successfully saved ${file.name} to ${browsingConnection.name}`,
+      });
+    } catch (err: any) {
+      alert(`Upload failed: ${err?.message || err}`);
+    } finally {
+      setIsLoadingFiles(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
   const defaultConnection = connections.find(c => c.isDefault) || connections[0];
 
   return (
@@ -691,6 +835,16 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
           <button className="btn btn-secondary btn-sm" onClick={refreshAllStorageData} disabled={isRefreshing}>
             <RefreshCw size={13} className={isRefreshing ? 'spinning' : ''} />
             <span>{isRefreshing ? 'Refreshing...' : 'Refresh Quotas'}</span>
+          </button>
+
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{ color: '#0ea5e9', borderColor: 'rgba(14, 165, 233, 0.4)' }}
+            onClick={handleOpenMigrationModal}
+            title="Migrate all local books, documents and notes to connected Cloud Storage"
+          >
+            <ArrowRightLeft size={13} />
+            <span>Migrate Vault to Cloud</span>
           </button>
 
           <button className="btn btn-primary btn-sm" onClick={() => { setShowAddModal(true); setIsCustomWizard(false); setSelectedPopularType(null); }}>
@@ -954,11 +1108,33 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                           color: testResult.success ? '#22c55e' : '#ef4444',
                           display: 'flex',
                           alignItems: 'center',
+                          justifyContent: 'space-between',
                           gap: 6,
+                          flexWrap: 'wrap',
                         }}
                       >
-                        <span>{testResult.success ? '✓' : '✕'}</span>
-                        <span>{testResult.message}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                          <span>{testResult.success ? '✓' : '✕'}</span>
+                          <span>{testResult.message}</span>
+                        </div>
+                        {testResult.url && (
+                          <a
+                            href={testResult.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              color: '#22c55e',
+                              textDecoration: 'underline',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 2,
+                            }}
+                          >
+                            <span>Open in Drive ↗</span>
+                          </a>
+                        )}
                       </div>
                     )}
 
@@ -978,6 +1154,17 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                           {testingConnId === conn.id ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle size={11} />}
                           <span>{testingConnId === conn.id ? 'Testing...' : 'Test'}</span>
                         </button>
+                        {conn.providerType !== 'local' && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            disabled={testingConnId === conn.id}
+                            onClick={() => handleEnsureCloudFolder(conn)}
+                            title="Create or verify LIBRIX root & nested folders on this cloud"
+                          >
+                            <FolderPlus size={11} />
+                            <span>Init Vault</span>
+                          </button>
+                        )}
                         {!conn.isDefault && (
                           <button className="btn btn-secondary btn-sm" onClick={() => handleSetDefaultProvider(conn.id)} title="Set as default storage">
                             <span>Default</span>
@@ -1092,10 +1279,28 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {browsingConnection.providerType === 'local' ? <HardDrive size={16} /> : <Cloud size={16} />}
                 <span style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-xs)', fontWeight: 600 }}>
-                  {browsingConnection.name.toUpperCase()} FILES
+                  {browsingConnection.name.toUpperCase()} FILES ({cloudItems.length})
                 </span>
               </div>
-              <button className="btn-icon btn-sm" onClick={() => setBrowsingConnection(null)}>✕</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  type="file"
+                  ref={uploadFileInputRef}
+                  style={{ display: 'none' }}
+                  onChange={handleUploadToBrowsingStorage}
+                  accept=".pdf,.epub,.md,.txt,.docx,.mobi"
+                />
+                <button
+                  className="btn btn-sm btn-secondary"
+                  style={{ fontSize: '0.7rem', padding: '3px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
+                  onClick={() => uploadFileInputRef.current?.click()}
+                  title={`Upload document directly into ${browsingConnection.name}`}
+                >
+                  <Upload size={12} />
+                  <span>Upload</span>
+                </button>
+                <button className="btn-icon btn-sm" onClick={() => setBrowsingConnection(null)}>✕</button>
+              </div>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1105,8 +1310,16 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                   <span style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-xs)' }}>FETCHING STORAGE FILES...</span>
                 </div>
               ) : cloudItems.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 'var(--space-6)', color: 'var(--text-muted)', fontSize: 'var(--text-xs)' }}>
-                  No documents found on this storage account.
+                <div style={{ textAlign: 'center', padding: 'var(--space-6)', color: 'var(--text-muted)', fontSize: 'var(--text-xs)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <span>No documents found on this storage account.</span>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={() => uploadFileInputRef.current?.click()}
+                    style={{ fontSize: '0.72rem' }}
+                  >
+                    <Upload size={12} />
+                    <span>Upload Document</span>
+                  </button>
                 </div>
               ) : (
                 cloudItems.map(item => (
@@ -1134,28 +1347,31 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                     </div>
 
                     <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                      <button
-                        className="btn btn-sm btn-secondary"
-                        disabled={importingItemId === item.id || importSuccessId === item.id}
-                        onClick={() => handleImportCloudFile(item)}
-                        title="Import into Local Librix Library"
-                      >
-                        {importingItemId === item.id ? (
-                          <Loader2 size={12} className="animate-spin" />
-                        ) : importSuccessId === item.id ? (
-                          <CheckCircle size={12} color="var(--color-success)" />
-                        ) : (
-                          <Download size={12} />
-                        )}
-                        <span>{importSuccessId === item.id ? 'Imported' : 'Import'}</span>
-                      </button>
+                      {browsingConnection.providerType !== 'local' && (
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          disabled={importingItemId === item.id || importSuccessId === item.id}
+                          onClick={() => handleImportCloudFile(item)}
+                          title="Import into Local Librix Library"
+                        >
+                          {importingItemId === item.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : importSuccessId === item.id ? (
+                            <CheckCircle size={12} color="var(--color-success)" />
+                          ) : (
+                            <Download size={12} />
+                          )}
+                          <span>{importSuccessId === item.id ? 'Imported' : 'Import'}</span>
+                        </button>
+                      )}
 
                       <button
-                        className="btn btn-sm btn-ghost"
+                        className="btn btn-sm btn-primary"
                         onClick={() => handleStartTransfer(item)}
-                        title="Transfer (Copy / Move) to Another Provider"
+                        title={browsingConnection.providerType === 'local' ? 'Transfer (Copy / Move) to Cloud Storage' : 'Transfer (Copy / Move) to Another Provider'}
                       >
                         <ArrowRightLeft size={12} />
+                        <span>Transfer</span>
                       </button>
                     </div>
                   </div>
@@ -1300,6 +1516,19 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                                 </div>
                                 <div>
                                   Opens Google's official authorization page to connect your Google account securely with PKCE (RFC 7636).
+                                </div>
+                              </div>
+
+                              <div style={{ background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.3)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', fontSize: '0.73rem', lineHeight: 1.5 }}>
+                                <div style={{ fontWeight: 700, color: 'var(--text-warning)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <Shield size={14} /> Required Google Permissions on Sign-In Screen
+                                </div>
+                                <div style={{ color: 'var(--text-secondary)' }}>
+                                  On Google's consent screen, you <strong>must check the box</strong>:
+                                  <div style={{ margin: '6px 0', padding: '6px 8px', background: 'var(--bg-surface)', borderRadius: 4, fontFamily: 'var(--font-tech)', fontSize: '0.7rem', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)' }}>
+                                    ☑️ "See, edit, create, and delete only the specific Google Drive files..."
+                                  </div>
+                                  This allows LIBRIX to create your dedicated <code>/LIBRIX</code> vault folder and organize books & notes in Google Drive.
                                 </div>
                               </div>
 
@@ -1654,6 +1883,170 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
               <button className="btn btn-primary" onClick={handleExecuteTransfer} disabled={isTransferring}>
                 {isTransferring ? <Loader2 size={13} className="animate-spin" /> : <ArrowRightLeft size={13} />}
                 <span>{isTransferring ? 'Transferring...' : `Execute ${transferOperation.toUpperCase()}`}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VAULT MIGRATION TO CLOUD MODAL */}
+      {showMigrationModal && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: 540 }}>
+            <div className="modal-header">
+              <div>
+                <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <ArrowRightLeft size={18} color="#0ea5e9" />
+                  <span>Migrate Local Vault to Cloud</span>
+                </h3>
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Transfer your local library books, documents, and notes to connected cloud storage.
+                </p>
+              </div>
+              <button className="btn-icon btn-sm" onClick={() => setShowMigrationModal(false)} disabled={isMigratingVault}>✕</button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              {/* Vault Content Breakdown */}
+              {localCounts.docs === 0 && localCounts.notes === 0 ? (
+                <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-medium)', padding: 14, borderRadius: 'var(--radius-xs)', textAlign: 'center' }}>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                    💡 <strong style={{ color: 'var(--text-primary)' }}>Your local library is currently empty (0 books, 0 notes).</strong><br />
+                    To add books or notes to your local device, go to the <strong>Library</strong> tab and click <strong>"Import Document"</strong>, or open <strong>Knowledge Vault</strong> to write a note.
+                  </p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                  <div style={{ background: 'var(--bg-surface)', padding: 12, borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      <BookOpen size={14} color="#0ea5e9" />
+                      <span>BOOKS & DOCS READY</span>
+                    </div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, fontFamily: 'var(--font-display)', marginTop: 4 }}>
+                      {localCounts.docs} Documents
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'var(--bg-surface)', padding: 12, borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      <FileText size={14} color="#10b981" />
+                      <span>KNOWLEDGE NOTES READY</span>
+                    </div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, fontFamily: 'var(--font-display)', marginTop: 4 }}>
+                      {localCounts.notes} Notes
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Target Cloud Selector */}
+              <div>
+                <label style={{ fontSize: 'var(--text-2xs)', fontFamily: 'var(--font-tech)', color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+                  DESTINATION CLOUD PROVIDER:
+                </label>
+                <select
+                  style={{ width: '100%', padding: '8px 10px', fontSize: 'var(--text-sm)', background: 'var(--bg-input)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-xs)', color: 'var(--text-primary)' }}
+                  value={migrationTargetConnId}
+                  onChange={e => setMigrationTargetConnId(e.target.value)}
+                  disabled={isMigratingVault}
+                >
+                  {connections.filter(c => c.providerType !== 'local').length === 0 ? (
+                    <option value="">No Cloud Accounts Connected — Add Google Drive, OneDrive, or WebDAV first</option>
+                  ) : (
+                    connections.filter(c => c.providerType !== 'local').map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.providerType.toUpperCase()}) — {c.status.toUpperCase()}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              {/* Operation Mode */}
+              <div>
+                <label style={{ fontSize: 'var(--text-2xs)', fontFamily: 'var(--font-tech)', color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+                  MIGRATION MODE:
+                </label>
+                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', flex: 1, padding: 10, background: 'var(--bg-surface)', borderRadius: 'var(--radius-xs)', border: migrationOperation === 'copy' ? '1px solid #0ea5e9' : '1px solid var(--border-subtle)' }}>
+                    <input
+                      type="radio"
+                      name="migOp"
+                      checked={migrationOperation === 'copy'}
+                      onChange={() => setMigrationOperation('copy')}
+                      disabled={isMigratingVault}
+                      style={{ marginTop: 2 }}
+                    />
+                    <div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>Copy / Backup to Cloud</div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Keeps local offline cache, uploads copy to cloud</div>
+                    </div>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', flex: 1, padding: 10, background: 'var(--bg-surface)', borderRadius: 'var(--radius-xs)', border: migrationOperation === 'move' ? '1px solid #0ea5e9' : '1px solid var(--border-subtle)' }}>
+                    <input
+                      type="radio"
+                      name="migOp"
+                      checked={migrationOperation === 'move'}
+                      onChange={() => setMigrationOperation('move')}
+                      disabled={isMigratingVault}
+                      style={{ marginTop: 2 }}
+                    />
+                    <div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>Move to Cloud</div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Transfers to cloud and frees up local browser storage</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Progress Indicator */}
+              {migrationProgress && (
+                <div style={{ background: 'var(--bg-surface)', padding: 12, borderRadius: 'var(--radius-xs)', display: 'flex', flexDirection: 'column', gap: 8, border: '1px solid var(--border-subtle)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-2xs)', fontFamily: 'var(--font-tech)' }}>
+                    <span style={{ color: '#0ea5e9', fontWeight: 600 }}>{migrationProgress.status.toUpperCase()}: {migrationProgress.currentItemName}</span>
+                    <span>{migrationProgress.percentage}%</span>
+                  </div>
+                  <div style={{ width: '100%', height: 6, background: 'var(--bg-input)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${migrationProgress.percentage}%`, height: '100%', background: '#0ea5e9', transition: 'width 0.2s ease' }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Result Banner (Success vs Failure) */}
+              {migrationResult && (
+                migrationResult.migratedDocuments === 0 && migrationResult.migratedNotes === 0 ? (
+                  <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: 12, borderRadius: 'var(--radius-xs)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ef4444', fontSize: '0.78rem', fontWeight: 600 }}>
+                      <AlertTriangle size={18} />
+                      <span>Migration Incomplete (0 items uploaded)</span>
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      {migrationResult.errors && migrationResult.errors.length > 0
+                        ? `Reason: ${migrationResult.errors[0].error}`
+                        : 'Google Drive was not fully authenticated. Please click "Test" or "Reconnect" on your Google Drive card to authenticate first.'}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: 12, borderRadius: 'var(--radius-xs)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <CheckCircle size={20} color="#10b981" />
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-primary)' }}>
+                      <strong style={{ color: '#10b981' }}>Migration Complete!</strong> Successfully uploaded {migrationResult.migratedDocuments} books and {migrationResult.migratedNotes} notes to cloud.
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setShowMigrationModal(false)} disabled={isMigratingVault}>Close</button>
+              <button
+                className="btn btn-primary"
+                onClick={handleExecuteVaultMigration}
+                disabled={isMigratingVault || connections.filter(c => c.providerType !== 'local').length === 0}
+              >
+                {isMigratingVault ? <Loader2 size={13} className="animate-spin" /> : <ArrowRightLeft size={13} />}
+                <span>{isMigratingVault ? 'Migrating Vault...' : `Start Migration (${migrationOperation.toUpperCase()})`}</span>
               </button>
             </div>
           </div>
