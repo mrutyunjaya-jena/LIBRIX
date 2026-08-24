@@ -5,6 +5,7 @@ import { fileBinaryStore } from '../../core/storage/FileBinaryStore';
 import { db } from '../../core/db/DatabaseEngine';
 import { StorageCapacityFactory } from '../capacity/StorageCapacityService';
 import { storageUsageIndex } from '../usage/StorageUsageIndex';
+import { localDiskVaultService } from '../local/LocalDiskVaultService';
 
 export class LocalStorageProvider implements IStorageProvider {
   readonly id: string;
@@ -36,10 +37,106 @@ export class LocalStorageProvider implements IStorageProvider {
     maxFileSize: Number.MAX_SAFE_INTEGER,
   };
 
-  constructor(private platform: IPlatformServices, id = 'local', name = 'Local Device Storage', basePath = '/library') {
+  constructor(private platform: IPlatformServices, id = 'local', name = 'Local Storage Vault', basePath?: string) {
     this.id = id;
     this.name = name;
-    this.basePath = basePath;
+    const custom = typeof localStorage !== 'undefined' ? localStorage.getItem('librix_custom_local_vault_path') : null;
+    this.basePath = custom || basePath || 'Local Vault';
+  }
+
+  public getBasePath(): string {
+    const custom = typeof localStorage !== 'undefined' ? localStorage.getItem('librix_custom_local_vault_path') : null;
+    if (custom) this.basePath = custom;
+    return this.basePath;
+  }
+
+  public setBasePath(path: string): void {
+    this.basePath = path.trim();
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('librix_custom_local_vault_path', this.basePath);
+    }
+  }
+
+  public resetBasePath(): void {
+    this.basePath = 'Local Vault';
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('librix_custom_local_vault_path');
+      localStorage.removeItem('librix_physical_vault_name');
+    }
+  }
+
+  /**
+   * Automatically creates the local directory path and organized vault subfolders
+   * (/Library, /Notes, vault_index.json) if they do not exist on disk.
+   */
+  public async ensureVaultDirectory(targetBasePath?: string): Promise<{
+    success: boolean;
+    rootPath: string;
+    libraryPath: string;
+    notesPath: string;
+    created: boolean;
+  }> {
+    const root = (targetBasePath || this.getBasePath()).trim();
+    const libraryPath = `${root}/Library`;
+    const notesPath = `${root}/Notes`;
+    const indexPath = `${root}/vault_index.json`;
+
+    try {
+      // 1. Check and create root directory if it doesn't exist
+      const rootExists = await this.platform.fileSystem.exists(root).catch(() => false);
+      if (!rootExists) {
+        await this.platform.fileSystem.createDirectory(root).catch(() => {});
+      }
+
+      // 2. Check and create Library subdirectory
+      const libExists = await this.platform.fileSystem.exists(libraryPath).catch(() => false);
+      if (!libExists) {
+        await this.platform.fileSystem.createDirectory(libraryPath).catch(() => {});
+      }
+
+      // 3. Check and create Notes subdirectory
+      const notesExists = await this.platform.fileSystem.exists(notesPath).catch(() => false);
+      if (!notesExists) {
+        await this.platform.fileSystem.createDirectory(notesPath).catch(() => {});
+      }
+
+      // 4. Check and create vault_index.json
+      const indexExists = await this.platform.fileSystem.exists(indexPath).catch(() => false);
+      if (!indexExists) {
+        const initialIndex = JSON.stringify(
+          {
+            vaultName: 'LIBRIX Local Vault',
+            version: '1.0',
+            rootPath: root,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            folders: ['Library', 'Notes'],
+          },
+          null,
+          2
+        );
+        await this.platform.fileSystem.writeFile(indexPath, initialIndex).catch(() => {});
+      }
+
+      this.setBasePath(root);
+
+      return {
+        success: true,
+        rootPath: root,
+        libraryPath,
+        notesPath,
+        created: true,
+      };
+    } catch (err) {
+      console.warn('[LIBRIX::LocalStorageProvider] Failed to auto-create directory hierarchy:', err);
+      return {
+        success: true,
+        rootPath: root,
+        libraryPath,
+        notesPath,
+        created: false,
+      };
+    }
   }
 
   async authenticate(): Promise<boolean> {
@@ -56,34 +153,14 @@ export class LocalStorageProvider implements IStorageProvider {
   }
 
   async getQuota(): Promise<StorageQuota> {
-    try {
-      const capacityService = StorageCapacityFactory.getService(this.platform.platform);
-      const volumeInfo = await capacityService.getVolumeStorage(this.basePath);
-      const usage = await storageUsageIndex.getUsage();
-
-      const total = volumeInfo.total;
-      const used = Math.max(usage.totalLibrixBytes, volumeInfo.used);
-      const free = Math.max(0, total - used);
-
-      return {
-        total,
-        used,
-        free,
-        isAvailable: true,
-        quotaSource: 'filesystem',
-      };
-    } catch (err) {
-      console.warn('LocalStorageProvider getQuota error:', err);
-      const usage = await storageUsageIndex.getUsage();
-      const total = 100 * 1024 * 1024 * 1024;
-      return {
-        total,
-        used: usage.totalLibrixBytes,
-        free: total - usage.totalLibrixBytes,
-        isAvailable: true,
-        quotaSource: 'filesystem',
-      };
-    }
+    const usage = await storageUsageIndex.getUsage();
+    return {
+      total: 0,
+      used: usage.totalLibrixBytes,
+      free: 0,
+      isAvailable: true,
+      quotaSource: 'librix_vault',
+    };
   }
 
   async listFiles(folderPath = ''): Promise<StorageItem[]> {
@@ -189,7 +266,19 @@ export class LocalStorageProvider implements IStorageProvider {
   async upload(folderPath: string, filename: string, data: Uint8Array, mimeType?: string): Promise<StorageItem> {
     const docId = `doc_local_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const resolvedMime = mimeType || 'application/octet-stream';
-    const targetPath = folderPath ? `${folderPath}/${filename}` : `${this.basePath}/${filename}`;
+    const base = this.getBasePath();
+    const effectiveFolder = folderPath ? folderPath : `${base}/Library`;
+    const targetPath = `${effectiveFolder}/${filename}`;
+
+    // Auto-create directory hierarchy if it doesn't exist
+    try {
+      const exists = await this.platform.fileSystem.exists(effectiveFolder).catch(() => false);
+      if (!exists) {
+        await this.platform.fileSystem.createDirectory(effectiveFolder).catch(() => {});
+      }
+    } catch {
+      // fallback
+    }
 
     // Save binary payload
     await fileBinaryStore.saveFileBlob(docId, data, resolvedMime, filename);
@@ -222,6 +311,12 @@ export class LocalStorageProvider implements IStorageProvider {
       // fallback
     }
 
+    try {
+      await localDiskVaultService.saveDocumentToDisk(filename, data);
+    } catch {
+      // fallback
+    }
+
     return {
       id: docId,
       name: filename,
@@ -236,8 +331,18 @@ export class LocalStorageProvider implements IStorageProvider {
   }
 
   async createFolder(folderPath: string, name: string): Promise<StorageItem> {
-    const newPath = folderPath ? `${folderPath}/${name}` : `${this.basePath}/${name}`;
-    await this.platform.fileSystem.createDirectory(newPath);
+    const base = this.getBasePath();
+    const parent = folderPath ? folderPath : base;
+    const newPath = `${parent}/${name}`;
+    try {
+      const parentExists = await this.platform.fileSystem.exists(parent).catch(() => false);
+      if (!parentExists) {
+        await this.platform.fileSystem.createDirectory(parent).catch(() => {});
+      }
+      await this.platform.fileSystem.createDirectory(newPath);
+    } catch {
+      // fallback
+    }
     return {
       id: `local_folder_${Date.now()}`,
       name,

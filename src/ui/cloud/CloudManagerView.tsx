@@ -31,6 +31,7 @@ import { usePlatform } from '../../platform/PlatformContext';
 import { storageRegistry } from '../../storage/StorageRegistry';
 import { StorageItem, StorageQuota, IStorageProvider } from '../../storage/StorageProvider';
 import { GoogleDriveProvider } from '../../storage/providers/GoogleDriveProvider';
+import { LocalStorageProvider } from '../../storage/providers/LocalStorageProvider';
 import { fileBinaryStore } from '../../core/storage/FileBinaryStore';
 import { PdfParser } from '../../readers/parsers/PdfParser';
 import { EpubParser } from '../../readers/parsers/EpubParser';
@@ -40,6 +41,7 @@ import { crossProviderTransfer, TransferProgress } from '../../storage/transfer/
 import { vaultMigrationService, MigrationProgress, MigrationResult } from '../../storage/transfer/VaultMigrationService';
 import { CustomProtocolType } from '../../storage/providers/CustomStorageProvider';
 import { cloudVaultSyncService } from '../../storage/sync/CloudVaultSyncService';
+import { localDiskVaultService } from '../../storage/local/LocalDiskVaultService';
 
 interface CloudManagerViewProps {
   connections: CloudConnection[];
@@ -82,8 +84,8 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
   const [popularAuthToken, setPopularAuthToken] = useState('');
   const [popularRefreshToken, setPopularRefreshToken] = useState('');
   const [popularEmail, setPopularEmail] = useState('mjxtor@gmail.com');
-  const [showGdriveAdvanced, setShowGdriveAdvanced] = useState(false);
   const [customGdriveClientId, setCustomGdriveClientId] = useState('');
+  const [customGdriveClientSecret, setCustomGdriveClientSecret] = useState('');
   const [gdriveMode, setGdriveMode] = useState<'direct' | 'token' | 'oauth'>('direct');
 
   // Rename Connection State
@@ -113,6 +115,128 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
   const [migrationResult, setMigrationResult] = useState<MigrationResult | null>(null);
   const [isMigratingVault, setIsMigratingVault] = useState(false);
   const [localCounts, setLocalCounts] = useState<{ docs: number; notes: number }>({ docs: 0, notes: 0 });
+
+  // Custom Local Storage Path State
+  const [customLocalPath, setCustomLocalPath] = useState<string>(() => {
+    return typeof localStorage !== 'undefined'
+      ? localStorage.getItem('librix_custom_local_vault_path') || 'Local Vault'
+      : 'Local Vault';
+  });
+  const [isEditingLocalPath, setIsEditingLocalPath] = useState(false);
+  const [tempLocalPath, setTempLocalPath] = useState(customLocalPath);
+  const [localPathSaved, setLocalPathSaved] = useState(false);
+  const [localInitMsg, setLocalInitMsg] = useState<string | null>(null);
+
+  const [isLinkingFolder, setIsLinkingFolder] = useState(false);
+  const [linkedPhysicalName, setLinkedPhysicalName] = useState<string | null>(() => {
+    return localDiskVaultService.getLinkedDirectoryName();
+  });
+  const [isSyncingDisk, setIsSyncingDisk] = useState(false);
+  const [isExportingZip, setIsExportingZip] = useState(false);
+
+  const handleSaveLocalPath = async () => {
+    const trimmed = tempLocalPath.trim();
+    if (!trimmed) return;
+    setCustomLocalPath(trimmed);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('librix_custom_local_vault_path', trimmed);
+    }
+    const localProvider = storageRegistry.getProvider('local') as LocalStorageProvider | undefined;
+    if (localProvider && typeof localProvider.ensureVaultDirectory === 'function') {
+      await localProvider.ensureVaultDirectory(trimmed);
+    } else if (localProvider && typeof localProvider.setBasePath === 'function') {
+      localProvider.setBasePath(trimmed);
+    }
+    setIsEditingLocalPath(false);
+    setLocalPathSaved(true);
+    setLocalInitMsg(`Vault directory created: ${trimmed}`);
+    setTimeout(() => {
+      setLocalPathSaved(false);
+      setLocalInitMsg(null);
+    }, 4000);
+  };
+
+  const handleResetPath = () => {
+    localDiskVaultService.clearAssignedPath();
+    const localProvider = storageRegistry.getProvider('local') as LocalStorageProvider | undefined;
+    if (localProvider && typeof localProvider.resetBasePath === 'function') {
+      localProvider.resetBasePath();
+    }
+    setCustomLocalPath('Local Vault');
+    setTempLocalPath('Local Vault');
+    setLinkedPhysicalName(null);
+    setIsEditingLocalPath(false);
+    setLocalPathSaved(true);
+    setLocalInitMsg('Previous path removed & reset to default vault');
+    setTimeout(() => {
+      setLocalPathSaved(false);
+      setLocalInitMsg(null);
+    }, 4000);
+  };
+
+  const handleExportVaultZip = async () => {
+    setIsExportingZip(true);
+    try {
+      const { blob, filename, totalDocs, totalNotes } = await localDiskVaultService.exportVaultZip();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setLocalPathSaved(true);
+      setLocalInitMsg(`Downloaded ${filename} (${totalDocs} books, ${totalNotes} notes)`);
+      setTimeout(() => {
+        setLocalPathSaved(false);
+        setLocalInitMsg(null);
+      }, 5000);
+    } catch (err: any) {
+      alert(`Export failed: ${err?.message || err}`);
+    } finally {
+      setIsExportingZip(false);
+    }
+  };
+
+  const handlePickPhysicalFolder = async () => {
+    setIsLinkingFolder(true);
+    const res = await localDiskVaultService.pickPhysicalVaultDirectory();
+    setIsLinkingFolder(false);
+    if (res.success && res.directoryName) {
+      setLinkedPhysicalName(res.directoryName);
+      setCustomLocalPath(res.directoryName);
+      setTempLocalPath(res.directoryName);
+      setLocalPathSaved(true);
+      setLocalInitMsg(`Linked to "${res.directoryName}" (${res.syncedDocs || 0} books, ${res.syncedNotes || 0} notes written to disk)`);
+      setTimeout(() => {
+        setLocalPathSaved(false);
+        setLocalInitMsg(null);
+      }, 5000);
+    } else if (res.error) {
+      if (!res.isPermissionDenied) {
+        alert(res.error);
+      }
+      setLocalPathSaved(true);
+      setLocalInitMsg(res.error);
+      setTimeout(() => {
+        setLocalPathSaved(false);
+        setLocalInitMsg(null);
+      }, 6000);
+    }
+  };
+
+  const handleSyncToDisk = async () => {
+    setIsSyncingDisk(true);
+    const res = await localDiskVaultService.syncAllToDisk();
+    setIsSyncingDisk(false);
+    setLocalPathSaved(true);
+    setLocalInitMsg(`Synced ${res.syncedDocs} books and ${res.syncedNotes} notes to disk!`);
+    setTimeout(() => {
+      setLocalPathSaved(false);
+      setLocalInitMsg(null);
+    }, 4000);
+  };
 
   const formatBytes = (bytes?: number) => {
     if (!bytes || bytes <= 0) return '0 B';
@@ -272,7 +396,8 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
     directToken?: string,
     customClientId?: string,
     directRefreshToken?: string,
-    directEmail?: string
+    directEmail?: string,
+    customClientSecret?: string
   ) => {
     if (!selectedPopularType) return;
     setConnectingError(null);
@@ -281,9 +406,11 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
     const email = directEmail || popularEmail.trim() || undefined;
     const token = directToken || popularAuthToken.trim() || undefined;
     const refreshToken = directRefreshToken || popularRefreshToken.trim() || undefined;
+    const clientId = customClientId?.trim() || customGdriveClientId.trim() || undefined;
+    const clientSecret = customClientSecret?.trim() || customGdriveClientSecret.trim() || undefined;
 
     setConnectingStatus(
-      isGdrive && !token && !email
+      isGdrive && !token && !refreshToken && !email
         ? 'Opening Google authorization window...'
         : 'Connecting and verifying Google Drive storage...'
     );
@@ -310,20 +437,22 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
         type: selectedPopularType,
       });
 
-      if (isGdrive && customClientId?.trim()) {
+      if (isGdrive && (clientId || clientSecret)) {
         (provider as GoogleDriveProvider).configure({
-          clientId: customClientId.trim(),
+          clientId: clientId,
+          clientSecret: clientSecret,
         });
       }
 
       const authSuccess = await provider.authenticate(
         isGdrive
           ? {
-              interactive: !token && !email,
+              interactive: !token && !refreshToken && !email,
               accessToken: token,
               refreshToken: refreshToken,
               email: email,
-              clientId: customClientId?.trim() || undefined,
+              clientId: clientId,
+              clientSecret: clientSecret,
               onProgress: (step: string) => setConnectingStatus(step),
             }
           : {
@@ -372,9 +501,10 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
       setShowAddModal(false);
       setSelectedPopularType(null);
       setPopularAuthToken('');
+      setPopularRefreshToken('');
       setPopularEmail('');
       setCustomGdriveClientId('');
-      setShowGdriveAdvanced(false);
+      setCustomGdriveClientSecret('');
       setConnectingStatus(null);
       setConnectingError(null);
       onConnectionsUpdated();
@@ -862,52 +992,148 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
           {/* SECTION 1: PHYSICAL STORAGE vs LIBRIX USAGE */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 'var(--space-4)' }}>
 
-            {/* CARD A: PHYSICAL VOLUME STORAGE */}
+            {/* CARD A: LOCAL STORAGE VAULT */}
             <div className="card card-elevated scifi-box" style={{ padding: 'var(--space-4) var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <HardDrive size={18} />
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 'var(--text-sm)' }}>LOCAL STORAGE</div>
+                    <div style={{ fontWeight: 700, fontSize: 'var(--text-sm)' }}>LOCAL VAULT STORAGE</div>
                     <div style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', color: 'var(--text-muted)' }}>
-                      {volumeInfo?.volumeName || 'System Volume'} • {volumeInfo?.mountPoint || '/'}
+                      {customLocalPath}
                     </div>
                   </div>
                 </div>
-                <span className="badge">{volumeInfo?.isEstimated ? 'BROWSER SANDBOX' : 'PHYSICAL VOLUME'}</span>
+                <span className="badge">LOCAL VAULT</span>
               </div>
 
-              {/* Volume Stats */}
+              {/* Local Vault Stats */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, background: 'var(--bg-input)', padding: '10px', borderRadius: 'var(--radius-xs)' }}>
                 <div>
-                  <div style={{ fontFamily: 'var(--font-tech)', fontSize: '0.62rem', color: 'var(--text-muted)' }}>TOTAL STORAGE</div>
-                  <div style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: 'var(--font-display)' }}>
-                    {formatBytes(volumeInfo?.total)}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontFamily: 'var(--font-tech)', fontSize: '0.62rem', color: 'var(--text-muted)' }}>USED STORAGE</div>
-                  <div style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: 'var(--font-display)' }}>
-                    {formatBytes(volumeInfo?.used)}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontFamily: 'var(--font-tech)', fontSize: '0.62rem', color: 'var(--text-muted)' }}>FREE STORAGE</div>
+                  <div style={{ fontFamily: 'var(--font-tech)', fontSize: '0.62rem', color: 'var(--text-muted)' }}>STORED DOCUMENTS</div>
                   <div style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
-                    {formatBytes(volumeInfo?.free)}
+                    {(librixUsage?.booksCount || 0) + (librixUsage?.documentsCount || 0)} files
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontFamily: 'var(--font-tech)', fontSize: '0.62rem', color: 'var(--text-muted)' }}>STORED NOTES</div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
+                    {librixUsage?.notesCount || 0} notes
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontFamily: 'var(--font-tech)', fontSize: '0.62rem', color: 'var(--text-muted)' }}>LOCAL VAULT SIZE</div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
+                    {formatBytes(librixUsage?.totalLibrixBytes)}
                   </div>
                 </div>
               </div>
 
-              {/* Disk Progress Gauge */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', fontFamily: 'var(--font-tech)', color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  <span>{formatBytes(volumeInfo?.free)} available</span>
-                  <span>{volumeInfo?.total ? Math.round(((volumeInfo.used || 0) / volumeInfo.total) * 100) : 0}% used</span>
+              {/* Custom Local Storage Path Configuration */}
+              <div style={{ background: 'var(--bg-input)', padding: '8px 10px', borderRadius: 'var(--radius-xs)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.65rem', fontFamily: 'var(--font-tech)', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    LOCAL VAULT DIRECTORY
+                  </span>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    {customLocalPath !== 'Local Vault' && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: '0.65rem', padding: '2px 6px', height: 'auto', display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)' }}
+                        onClick={handleResetPath}
+                        title="Remove custom path and reset to default Local Vault"
+                      >
+                        <Trash2 size={10} />
+                        <span>Reset Path</span>
+                      </button>
+                    )}
+                    {!isEditingLocalPath && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: '0.65rem', padding: '2px 6px', height: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}
+                        onClick={() => {
+                          setTempLocalPath(customLocalPath === 'Local Vault' ? '' : customLocalPath);
+                          setIsEditingLocalPath(true);
+                        }}
+                      >
+                        <Edit2 size={10} />
+                        <span>Change Name/Path</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div style={{ width: '100%', height: 6, background: 'var(--bg-surface)', borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
-                  <div style={{ width: `${volumeInfo?.total ? Math.max(2, Math.round(((volumeInfo.used || 0) / volumeInfo.total) * 100)) : 2}%`, height: '100%', background: 'var(--text-primary)' }} />
-                  <div style={{ flex: 1, height: '100%', background: 'var(--border-subtle)' }} />
+
+                {isEditingLocalPath ? (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      value={tempLocalPath}
+                      onChange={e => setTempLocalPath(e.target.value)}
+                      placeholder="e.g. My Vault or Custom Directory"
+                      style={{ flex: 1, padding: '4px 8px', fontSize: 'var(--text-xs)', background: 'var(--bg-surface)' }}
+                    />
+                    <button className="btn btn-primary btn-sm" onClick={handleSaveLocalPath} style={{ fontSize: '0.7rem' }}>
+                      Save
+                    </button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setIsEditingLocalPath(false)} style={{ fontSize: '0.7rem' }}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-tech)', color: 'var(--text-primary)' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{customLocalPath}</span>
+                    {localPathSaved && (
+                      <span style={{ color: 'var(--color-success)', fontSize: '0.65rem', fontWeight: 600 }}>
+                        ✓ {localInitMsg || 'Updated'}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Subfolder Hierarchy Preview & Physical Actions */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, paddingTop: 4 }}>
+                  <div style={{ display: 'flex', gap: 10, fontSize: '0.62rem', fontFamily: 'var(--font-tech)', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                    <span>📁 {customLocalPath}/Library</span>
+                    <span>📁 {customLocalPath}/Notes</span>
+                    <span>📄 {customLocalPath}/vault_index.json</span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      style={{ fontSize: '0.65rem', padding: '3px 8px', height: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}
+                      onClick={handleExportVaultZip}
+                      disabled={isExportingZip}
+                      title="Download your entire organized local vault as a ZIP archive containing /Library, /Notes, and vault_index.json"
+                    >
+                      {isExportingZip ? <Loader2 size={10} className="animate-spin" /> : <Download size={10} />}
+                      <span>{isExportingZip ? 'Exporting...' : 'Export Vault (.zip)'}</span>
+                    </button>
+
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: '0.65rem', padding: '3px 8px', height: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}
+                      onClick={handlePickPhysicalFolder}
+                      disabled={isLinkingFolder}
+                      title="Link with a real folder on your disk via File System API"
+                    >
+                      {isLinkingFolder ? <Loader2 size={10} className="animate-spin" /> : <Folder size={10} />}
+                      <span>{linkedPhysicalName ? `Disk: ${linkedPhysicalName}` : 'Link Disk Folder'}</span>
+                    </button>
+
+                    {linkedPhysicalName && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: '0.65rem', padding: '3px 8px', height: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}
+                        onClick={handleSyncToDisk}
+                        disabled={isSyncingDisk}
+                        title="Sync all local files to the linked physical disk folder"
+                      >
+                        {isSyncingDisk ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                        <span>Sync to Disk</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1063,7 +1289,28 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                     </div>
 
                     {/* Quota Section: Honest reporting, no fake values */}
-                    {quotaAvailable && total > 0 ? (
+                    {conn.providerType === 'local' ? (
+                      <div style={{ background: 'var(--bg-input)', padding: '8px 10px', borderRadius: 'var(--radius-xs)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                          <div>
+                            <span style={{ fontFamily: 'var(--font-tech)', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              {formatBytes(librixUsage?.totalLibrixBytes)}
+                            </span>
+                            <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginLeft: 6 }}>
+                              local vault size
+                            </span>
+                          </div>
+                          <span style={{ fontFamily: 'var(--font-tech)', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                            {(librixUsage?.booksCount || 0) + (librixUsage?.documentsCount || 0)} Docs • {librixUsage?.notesCount || 0} Notes
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', color: 'var(--text-muted)', fontFamily: 'var(--font-tech)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>PATH: {customLocalPath}</span>
+                          <span style={{ flexShrink: 0, marginLeft: 6 }}>ORGANIZED</span>
+                        </div>
+                      </div>
+                    ) : quotaAvailable && total > 0 ? (
                       <div style={{ background: 'var(--bg-input)', padding: '8px 10px', borderRadius: 'var(--radius-xs)', display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                           <div>
@@ -1221,7 +1468,7 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
 
                 let statusDetail = 'Secure • Ready';
                 if (conn.providerType === 'local') {
-                  statusDetail = `${volumeInfo?.volumeName || 'Volume'} (${volumeInfo?.fsType || 'Local'}) • ${volumeInfo?.isEstimated ? 'Sandbox' : 'Physical Disk'}`;
+                  statusDetail = `Local Vault • Organized (/Library, /Notes) • ${customLocalPath}`;
                 } else if (conn.providerType === 'gdrive') {
                   statusDetail = `REST API v3 • ${live?.isAvailable ? 'Live Quota Synced' : 'Connected'}`;
                 } else if (conn.providerType === 'onedrive') {
@@ -1400,7 +1647,7 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                     Connect built-in popular cloud providers with one click or configure your own custom endpoint.
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 'var(--space-3)' }}>
                     <button
                       className={`card scifi-box ${selectedPopularType === 'gdrive' ? 'active' : ''}`}
                       style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left' }}
@@ -1409,43 +1656,7 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                       <Cloud size={20} />
                       <div>
                         <div style={{ fontWeight: 600, fontSize: 'var(--text-xs)' }}>Google Drive</div>
-                        <div style={{ fontSize: 'var(--text-2xs)', color: 'var(--text-muted)' }}>Official REST v3</div>
-                      </div>
-                    </button>
-
-                    <button
-                      className={`card scifi-box ${selectedPopularType === 'onedrive' ? 'active' : ''}`}
-                      style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left' }}
-                      onClick={() => setSelectedPopularType('onedrive')}
-                    >
-                      <Cloud size={20} />
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 'var(--text-xs)' }}>OneDrive</div>
-                        <div style={{ fontSize: 'var(--text-2xs)', color: 'var(--text-muted)' }}>Microsoft Graph</div>
-                      </div>
-                    </button>
-
-                    <button
-                      className={`card scifi-box ${selectedPopularType === 'mega' ? 'active' : ''}`}
-                      style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left' }}
-                      onClick={() => setSelectedPopularType('mega')}
-                    >
-                      <Shield size={20} />
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 'var(--text-xs)' }}>MEGA Cloud</div>
-                        <div style={{ fontSize: 'var(--text-2xs)', color: 'var(--text-muted)' }}>Encrypted Vault</div>
-                      </div>
-                    </button>
-
-                    <button
-                      className={`card scifi-box ${selectedPopularType === 'terabox' ? 'active' : ''}`}
-                      style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left' }}
-                      onClick={() => setSelectedPopularType('terabox')}
-                    >
-                      <Server size={20} />
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 'var(--text-xs)' }}>TeraBox</div>
-                        <div style={{ fontSize: 'var(--text-2xs)', color: 'var(--text-muted)' }}>Direct / Fallback</div>
+                        <div style={{ fontSize: 'var(--text-2xs)', color: 'var(--text-muted)' }}>Official REST API v3 • Two-Way Sync</div>
                       </div>
                     </button>
                   </div>
@@ -1454,7 +1665,7 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                     <div style={{ background: 'var(--bg-input)', padding: 'var(--space-4)', borderRadius: 'var(--radius-xs)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, fontFamily: 'var(--font-display)', letterSpacing: '0.03em' }}>
-                          CONNECT {selectedPopularType === 'gdrive' ? 'GOOGLE DRIVE' : selectedPopularType === 'onedrive' ? 'MICROSOFT ONEDRIVE' : selectedPopularType.toUpperCase()}
+                          CONNECT GOOGLE DRIVE
                         </span>
                         <span className="badge">OFFICIAL REST v3</span>
                       </div>
@@ -1565,16 +1776,15 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                           ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                               <div style={{ background: 'var(--bg-surface)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)', fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>Get a Real Google Drive Token from Google:</div>
-                                <div>1. Open <a href="https://developers.google.com/oauthplayground" target="_blank" rel="noreferrer" style={{ color: 'var(--text-primary)', textDecoration: 'underline' }}>Google OAuth 2.0 Playground</a>.</div>
-                                <div>2. In <strong>Step 1</strong>, scroll down to <strong>Drive API v3</strong> and select <code>https://www.googleapis.com/auth/drive.readonly</code> & <code>https://www.googleapis.com/auth/drive.file</code>.</div>
-                                <div>3. Click <strong>Authorize APIs</strong> and log into your Google account.</div>
-                                <div>4. In <strong>Step 2</strong>, click <strong>Exchange authorization code for tokens</strong>.</div>
-                                <div>5. Copy the <strong>Access token</strong> (starts with <code>ya29...</code>) and paste it below:</div>
+                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>Direct Google Drive Token Authentication:</div>
+                                <div>You can connect using an <strong>Access Token</strong> (starts with <code>ya29...</code>), a <strong>Refresh Token</strong> (starts with <code>1//0...</code>), or both.</div>
+                                <div style={{ marginTop: 4, fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                                  Tip: Get tokens easily from <a href="https://developers.google.com/oauthplayground" target="_blank" rel="noreferrer" style={{ color: 'var(--text-primary)', textDecoration: 'underline' }}>Google OAuth 2.0 Playground</a> under <em>Drive API v3</em>.
+                                </div>
                               </div>
 
                               <div className="form-group">
-                                <label className="form-label" style={{ fontSize: '0.72rem' }}>Google OAuth Access Token (ya29...)</label>
+                                <label className="form-label" style={{ fontSize: '0.72rem' }}>Google OAuth Access Token (Optional if Refresh Token provided)</label>
                                 <input
                                   type="password"
                                   placeholder="ya29.a0AfH6SM..."
@@ -1585,21 +1795,44 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                               </div>
 
                               <div className="form-group">
-                                <label className="form-label" style={{ fontSize: '0.72rem' }}>Google OAuth Refresh Token (Optional • Enables auto-renewal)</label>
+                                <label className="form-label" style={{ fontSize: '0.72rem' }}>Google OAuth Refresh Token (Optional if Access Token provided)</label>
                                 <input
                                   type="password"
-                                  placeholder="1//04... (from Step 2 of OAuth Playground)"
+                                  placeholder="1//04... (Enables permanent auto-refresh)"
                                   value={popularRefreshToken}
                                   disabled={!!connectingStatus}
                                   onChange={e => setPopularRefreshToken(e.target.value)}
                                 />
                               </div>
 
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                <div className="form-group">
+                                  <label className="form-label" style={{ fontSize: '0.68rem' }}>Custom Client ID (Optional)</label>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. 123...apps.googleusercontent.com"
+                                    value={customGdriveClientId}
+                                    disabled={!!connectingStatus}
+                                    onChange={e => setCustomGdriveClientId(e.target.value)}
+                                  />
+                                </div>
+                                <div className="form-group">
+                                  <label className="form-label" style={{ fontSize: '0.68rem' }}>Custom Client Secret (Optional)</label>
+                                  <input
+                                    type="password"
+                                    placeholder="GOCSPX-..."
+                                    value={customGdriveClientSecret}
+                                    disabled={!!connectingStatus}
+                                    onChange={e => setCustomGdriveClientSecret(e.target.value)}
+                                  />
+                                </div>
+                              </div>
+
                               <button
                                 className="btn btn-primary"
                                 style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontWeight: 600 }}
-                                disabled={!!connectingStatus || !popularAuthToken.trim()}
-                                onClick={() => handleConnectPopularProvider(popularAuthToken.trim(), undefined, popularRefreshToken.trim() || undefined)}
+                                disabled={!!connectingStatus || (!popularAuthToken.trim() && !popularRefreshToken.trim())}
+                                onClick={() => handleConnectPopularProvider(popularAuthToken.trim() || undefined, customGdriveClientId.trim() || undefined, popularRefreshToken.trim() || undefined, undefined, customGdriveClientSecret.trim() || undefined)}
                               >
                                 {connectingStatus ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                                 <span>{connectingStatus || 'Verify & Connect Google Drive'}</span>

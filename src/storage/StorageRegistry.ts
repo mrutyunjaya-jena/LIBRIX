@@ -31,17 +31,9 @@ export class StorageRegistry {
   private registerDefaultProviders(): void {
     const local = new LocalStorageProvider(this.platform, 'local', 'Local Storage');
     const gdrive = new GoogleDriveProvider(this.platform, 'gdrive-main', 'Google Drive');
-    const onedrive = new OneDriveProvider('onedrive-main', 'Microsoft OneDrive', this.platform);
-    const mega = new MegaProvider('mega-main', 'MEGA Cloud', this.platform);
-    const terabox = new TeraBoxProvider('terabox-main', 'TeraBox', this.platform);
-    const telegram = new TelegramStorageProvider(this.platform, 'telegram-vault', 'Telegram Vault');
 
     this.registerProvider(local);
     this.registerProvider(gdrive);
-    this.registerProvider(onedrive);
-    this.registerProvider(mega);
-    this.registerProvider(terabox);
-    this.registerProvider(telegram);
   }
 
   public registerProvider(provider: IStorageProvider): void {

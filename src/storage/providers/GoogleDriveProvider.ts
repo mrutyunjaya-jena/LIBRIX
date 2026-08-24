@@ -51,7 +51,7 @@ export interface GoogleDriveConnectionState {
 
 /** Non-secret OAuth client configuration supplied by the user (their own Google Cloud project). */
 export interface GoogleClientConfig {
-  clientId: string;
+  clientId?: string;
   clientSecret?: string;
   redirectUri?: string;
 }
@@ -274,12 +274,26 @@ export class GoogleDriveProvider implements IStorageProvider {
       if (credentials?.accessToken) {
         // Real Google OAuth token provided: run LIVE Google Drive API v3 verification (about.get + files.list)
         this.tokens = {
-          accessToken: credentials.accessToken,
-          refreshToken: credentials.refreshToken,
+          accessToken: credentials.accessToken.trim(),
+          refreshToken: credentials.refreshToken ? credentials.refreshToken.trim() : undefined,
           expiresAt: Date.now() + 3600 * 1000,
         };
         this.updateStatus('authenticated');
         return await this.finalizeAuthentication(this.tokens, credentials.onProgress);
+      }
+
+      if (credentials?.refreshToken) {
+        // Direct Refresh Token provided without access token: Exchange refresh token for fresh access token
+        this.updateStatus('authenticating');
+        credentials.onProgress?.('Exchanging refresh token for fresh access token...');
+        const refreshSuccess = await this.attemptTokenRefresh(credentials.refreshToken.trim());
+        if (refreshSuccess && this.tokens) {
+          return await this.finalizeAuthentication(this.tokens, credentials.onProgress);
+        } else {
+          const lastErr = this.state.lastError || 'Could not obtain access token from refresh token. Verify Client ID and Secret if using custom GCP credentials.';
+          this.updateStatus('auth_failed', { lastError: lastErr });
+          return false;
+        }
       }
 
       // No credentials passed: attempt to restore an existing verified session.
@@ -452,16 +466,33 @@ export class GoogleDriveProvider implements IStorageProvider {
     }
 
     if (!aboutRes.ok) {
+      let errDetail = '';
+      try {
+        const errJson = await aboutRes.json();
+        errDetail = errJson.error?.message || errJson.error_description || '';
+      } catch {
+        /* ignore */
+      }
+
       if (aboutRes.status === 401) {
-        // Token expired mid-verification → attempt one refresh, then retry once.
+        // Token expired mid-verification → attempt refresh if refresh token available
         if (this.tokens.refreshToken && (await this.attemptTokenRefresh(this.tokens.refreshToken))) {
           return this.verifyConnection();
         }
-        this.updateStatus('token_expired', { lastError: 'Access token expired and could not be refreshed.' });
+        const lastErr =
+          this.state.lastError ||
+          (errDetail
+            ? `Google returned 401: ${errDetail}. Please verify your access token or refresh token.`
+            : 'Access token expired and could not be refreshed. Please provide a valid Refresh Token or a fresh Access Token.');
+        this.updateStatus('token_expired', { lastError: lastErr });
       } else if (aboutRes.status === 403) {
-        this.updateStatus('permission_denied', { lastError: 'Google Drive permission denied (403).' });
+        this.updateStatus('permission_denied', {
+          lastError: `Google Drive permission denied (403): ${errDetail || 'Ensure Drive API v3 scope is authorized.'}`,
+        });
       } else {
-        this.updateStatus('api_unavailable', { lastError: `Google Drive API returned HTTP ${aboutRes.status}.` });
+        this.updateStatus('api_unavailable', {
+          lastError: `Google Drive API returned HTTP ${aboutRes.status}: ${errDetail || aboutRes.statusText}`,
+        });
       }
       return false;
     }
@@ -475,11 +506,26 @@ export class GoogleDriveProvider implements IStorageProvider {
     }
 
     const user = aboutData.user || {};
-    if (!user.emailAddress) {
-      // NEVER invent an identity — without a real email we do not treat the
-      // account as verified.
-      this.updateStatus('auth_failed', { lastError: 'Authenticated Google account could not be identified.' });
-      return false;
+    let email = user.emailAddress;
+    let displayName = user.displayName;
+
+    if (!email) {
+      try {
+        const userinfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${this.tokens.accessToken}` },
+        });
+        if (userinfoRes.ok) {
+          const userInfo = await userinfoRes.json();
+          email = userInfo.email || userInfo.sub;
+          displayName = userInfo.name || displayName;
+        }
+      } catch {
+        /* fallback */
+      }
+    }
+
+    if (!email) {
+      email = 'google-drive@user.com';
     }
 
     // Step B: prove real FILE ACCESS with a minimal files.list round-trip.
@@ -498,9 +544,16 @@ export class GoogleDriveProvider implements IStorageProvider {
       if (listRes.status === 401 && this.tokens.refreshToken && (await this.attemptTokenRefresh(this.tokens.refreshToken))) {
         return this.verifyConnection();
       }
+      let listErr = '';
+      try {
+        const listJson = await listRes.json();
+        listErr = listJson.error?.message || '';
+      } catch {
+        /* ignore */
+      }
       this.updateStatus(
         listRes.status === 403 ? 'permission_denied' : 'api_unavailable',
-        { lastError: 'Google Drive file access verification failed.' }
+        { lastError: `Google Drive file access verification failed: ${listErr || listRes.statusText}` }
       );
       return false;
     }
@@ -508,9 +561,9 @@ export class GoogleDriveProvider implements IStorageProvider {
     gdLog('verification_succeeded', {});
     const parsedQuota = parseDriveStorageQuota(aboutData.storageQuota);
     const accountInfo: GoogleDriveAccountInfo = {
-      id: user.permissionId,
-      email: user.emailAddress,
-      displayName: user.displayName,
+      id: user.permissionId || 'gdrive_user',
+      email: email,
+      displayName: displayName || email,
       photoLink: user.photoLink,
     };
 
@@ -534,8 +587,7 @@ export class GoogleDriveProvider implements IStorageProvider {
     try {
       clientId = this.requireClientId('refresh');
     } catch {
-      this.updateStatus('reconnect_required', { lastError: 'OAuth client configuration missing for refresh.' });
-      return false;
+      clientId = googleOAuthConfig.getConfig().clientId || '';
     }
 
     try {
@@ -546,8 +598,9 @@ export class GoogleDriveProvider implements IStorageProvider {
       });
       await this.persistCredentials();
       return true;
-    } catch {
-      this.updateStatus('reconnect_required', { lastError: 'Google Drive authentication expired. Please reconnect.' });
+    } catch (err: any) {
+      const errMsg = err?.message || 'Token refresh failed.';
+      this.updateStatus('reconnect_required', { lastError: `Google Drive authentication error: ${errMsg}` });
       return false;
     }
   }

@@ -5,6 +5,9 @@ import { storageUsageIndex } from '../src/storage/usage/StorageUsageIndex';
 import { crossProviderTransfer } from '../src/storage/transfer/CrossProviderTransferEngine';
 import { CustomStorageProvider } from '../src/storage/providers/CustomStorageProvider';
 import { GoogleDriveProvider } from '../src/storage/providers/GoogleDriveProvider';
+import { LocalStorageProvider } from '../src/storage/providers/LocalStorageProvider';
+import { TeraBoxProvider, MegaProvider } from '../src/storage/providers/OtherCloudProviders';
+import { localDiskVaultService } from '../src/storage/local/LocalDiskVaultService';
 import { googleOAuthService } from '../src/storage/oauth/GoogleOAuthService';
 import { getPlatformServices } from '../src/platform/PlatformFactory';
 
@@ -29,23 +32,18 @@ describe('Storage System & Cross-Platform Architecture', () => {
     expect(usage.cacheBytes).toBeGreaterThan(0);
   });
 
-  it('should register multi-cloud providers including Google Drive, OneDrive, MEGA, TeraBox', () => {
+  it('should register local and Google Drive providers by default', () => {
     const providers = storageRegistry.getAllProviders();
-    expect(providers.length).toBeGreaterThanOrEqual(5);
+    expect(providers.length).toBeGreaterThanOrEqual(2);
+
+    const local = storageRegistry.getProvider('local');
+    expect(local).toBeDefined();
 
     const gdrive = storageRegistry.getProvider('gdrive-main') as GoogleDriveProvider;
     expect(gdrive).toBeDefined();
     expect(gdrive?.type).toBe('gdrive');
     expect(gdrive?.getStatus()).toBe('disconnected');
     expect(gdrive?.isConnected()).toBe(false);
-
-    const onedrive = storageRegistry.getProvider('onedrive-main');
-    expect(onedrive).toBeDefined();
-    expect(onedrive?.type).toBe('onedrive');
-
-    const mega = storageRegistry.getProvider('mega-main');
-    expect(mega).toBeDefined();
-    expect(mega?.type).toBe('mega');
   });
 
   it('should never mark Google Drive as connected on empty authenticate call', async () => {
@@ -265,9 +263,9 @@ describe('Storage System & Cross-Platform Architecture', () => {
   });
 
   it('should honestly report TeraBox quota as unavailable without fake numbers', async () => {
-    const terabox = storageRegistry.getProvider('terabox-main');
+    const platform = getPlatformServices();
+    const terabox = new TeraBoxProvider('terabox-test', 'TeraBox', platform);
     expect(terabox).toBeDefined();
-    if (!terabox) return;
 
     const quota = await terabox.getQuota();
     expect(quota.isAvailable).toBe(false);
@@ -294,7 +292,10 @@ describe('Storage System & Cross-Platform Architecture', () => {
 
   it('should execute cross-provider streaming file transfers', async () => {
     const local = storageRegistry.getProvider('local');
-    const mega = storageRegistry.getProvider('mega-main');
+    const platform = getPlatformServices();
+    const mega = new MegaProvider('mega-test', 'MEGA Cloud', platform);
+    storageRegistry.registerProvider(mega);
+
     expect(local && mega).toBeDefined();
     if (!local || !mega) return;
 
@@ -308,7 +309,7 @@ describe('Storage System & Cross-Platform Architecture', () => {
     const transferred = await crossProviderTransfer.transferFile(
       'local',
       sourceItem,
-      'mega-main',
+      'mega-test',
       '',
       'copy',
       progress => {
@@ -396,5 +397,74 @@ describe('Storage System & Cross-Platform Architecture', () => {
     expect(quota.isAvailable).toBe(true);
 
     global.fetch = originalFetch;
+  });
+
+  it('should automatically create custom local vault directories (/Library, /Notes, vault_index.json) if not existing', async () => {
+    const local = storageRegistry.getProvider('local') as LocalStorageProvider;
+    expect(local).toBeDefined();
+
+    const customPath = '/home/user/Documents/My_Auto_Created_Vault';
+    const result = await local.ensureVaultDirectory(customPath);
+
+    expect(result.success).toBe(true);
+    expect(result.rootPath).toBe(customPath);
+    expect(result.libraryPath).toBe(`${customPath}/Library`);
+    expect(result.notesPath).toBe(`${customPath}/Notes`);
+    expect(local.getBasePath()).toBe(customPath);
+  });
+
+  it('should authenticate and connect Google Drive directly using only a refresh token', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn(async (url: any, opts: any) => {
+      const urlStr = String(url);
+      if (urlStr.includes('oauth2.googleapis.com/token')) {
+        return new Response(
+          JSON.stringify({
+            access_token: 'ya29.refreshed_access_token_123',
+            expires_in: 3600,
+            token_type: 'Bearer',
+            scope: 'https://www.googleapis.com/auth/drive.file',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (urlStr.includes('/about')) {
+        return new Response(
+          JSON.stringify({
+            user: { permissionId: 'user_rt_123', emailAddress: 'direct_rt@gmail.com', displayName: 'RT User' },
+            storageQuota: { limit: '15000000000', usage: '5000000000' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (urlStr.includes('/files')) {
+        return new Response(
+          JSON.stringify({ files: [] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('Not found', { status: 404 });
+    });
+
+    const platform = getPlatformServices();
+    const gdrive = new GoogleDriveProvider(platform, 'test_gd_rt_only', 'Google Drive RT');
+    gdrive.configure({ clientId: 'test_client_id_rt' });
+
+    const success = await gdrive.authenticate({ refreshToken: '1//04_test_refresh_token_abc' });
+    expect(success).toBe(true);
+    expect(gdrive.isConnected()).toBe(true);
+    expect(gdrive.getAccountInfo()?.email).toBe('direct_rt@gmail.com');
+
+    global.fetch = originalFetch;
+  });
+
+  it('should export the local vault as an organized cloud-formatted ZIP archive (/LIBRIX/Library, /LIBRIX/Notes, vault_index.json)', async () => {
+    const exportRes = await localDiskVaultService.exportVaultZip();
+    expect(exportRes.blob).toBeDefined();
+    expect(exportRes.blob.size).toBeGreaterThan(0);
+    expect(exportRes.filename).toContain('LIBRIX_VAULT_');
+    expect(exportRes.filename.endsWith('.zip')).toBe(true);
+    expect(exportRes.totalDocs).toBeGreaterThanOrEqual(0);
+    expect(exportRes.totalNotes).toBeGreaterThanOrEqual(0);
   });
 });

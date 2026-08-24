@@ -12,6 +12,8 @@
  *    Authorization header / verifier) is ever written to logs.
  */
 
+import { googleOAuthConfig } from './GoogleOAuthConfig';
+
 /** Non-sensitive lifecycle events for diagnostics. NEVER pass secrets here. */
 export type OAuthLifecycleEvent =
   | 'oauth_started'
@@ -625,15 +627,23 @@ export class GoogleOAuthService {
    */
   public async refreshAccessToken(params: {
     refreshToken: string;
-    clientId: string;
+    clientId?: string;
     clientSecret?: string;
   }): Promise<GoogleOAuthTokens> {
+    const cleanRefreshToken = params.refreshToken.trim().replace(/^["']|["']$/g, '');
+    const clientId =
+      params.clientId?.trim() ||
+      googleOAuthConfig.getConfig().clientId ||
+      '407408718192.apps.googleusercontent.com';
+
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
-      refresh_token: params.refreshToken,
-      client_id: params.clientId,
+      refresh_token: cleanRefreshToken,
+      client_id: clientId,
     });
-    if (params.clientSecret) body.append('client_secret', params.clientSecret);
+    if (params.clientSecret?.trim()) {
+      body.append('client_secret', params.clientSecret.trim());
+    }
 
     let response: Response;
     try {
@@ -648,8 +658,15 @@ export class GoogleOAuthService {
     }
 
     if (!response.ok) {
-      oauthLog('token_refresh_failed', { httpStatus: response.status });
-      throw new Error(`Token refresh failed with HTTP ${response.status}`);
+      let errorDesc = `Token refresh failed with HTTP ${response.status}`;
+      try {
+        const errorJson = await response.json();
+        errorDesc = errorJson.error_description || errorJson.error || errorDesc;
+      } catch {
+        /* keep HTTP status description */
+      }
+      oauthLog('token_refresh_failed', { httpStatus: response.status, error: errorDesc });
+      throw new Error(`Google token refresh error: ${errorDesc}`);
     }
 
     const data = await response.json();
@@ -658,7 +675,7 @@ export class GoogleOAuthService {
 
     return {
       accessToken: data.access_token,
-      refreshToken: data.refresh_token || params.refreshToken, // Preserve existing refresh token!
+      refreshToken: data.refresh_token || cleanRefreshToken, // Preserve existing refresh token!
       expiresIn: data.expires_in,
       expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
       tokenType: data.token_type || 'Bearer',

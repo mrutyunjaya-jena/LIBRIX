@@ -45,7 +45,7 @@ export interface StorageQuota {
   used: number;        // In bytes
   free: number;        // In bytes, 0 when unknown/unlimited
   isAvailable: boolean;// True if live API quota was retrieved, false if unavailable
-  quotaSource?: 'api' | 'filesystem' | 'unavailable';
+  quotaSource?: 'api' | 'filesystem' | 'unavailable' | 'librix_vault';
   unlimited?: boolean; // True when provider reports no finite limit
   usageInDrive?: number;      // Bytes used inside My Drive (Google)
   usageInDriveTrash?: number; // Bytes sitting in the Drive trash (Google)
