@@ -11,13 +11,16 @@
   },
   "dependencies": {
     "canvas-confetti": "^1.9.4",
+    "jszip": "^3.10.1",
     "lucide-react": "^1.16.0",
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "sql.js": "^1.13.3"
   },
   "devDependencies": {
     "@types/canvas-confetti": "^1.9.0",
+    "@types/jszip": "^3.4.0",
     "@types/node": "^22.13.14",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",

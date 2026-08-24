@@ -39,23 +39,27 @@ export const AppShell: React.FC = () => {
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [deleteTargetDoc, setDeleteTargetDoc] = useState<Document | null>(null);
 
-  // Initial Data Load
+  // Initial Data Load with safe error handling
   const reloadData = async () => {
-    await db.initialize();
-    const docs = await db.getDocuments();
-    const flds = await db.getFolders();
-    const nts = await db.getNotes();
-    const clds = await db.getCloudConnections();
+    try {
+      await db.initialize();
+      const docs = await db.getDocuments();
+      const flds = await db.getFolders();
+      const nts = await db.getNotes();
+      const clds = await db.getCloudConnections();
 
-    setDocuments(docs);
-    setFolders(flds);
-    setNotes(nts);
-    setClouds(clds);
+      setDocuments(docs || []);
+      setFolders(flds || []);
+      setNotes(nts || []);
+      setClouds(clds || []);
 
-    // Check first-run onboarding
-    const onboarded = localStorage.getItem('librix_onboarded');
-    if (!onboarded) {
-      setShowOnboarding(true);
+      // Check first-run onboarding
+      const onboarded = localStorage.getItem('librix_onboarded');
+      if (!onboarded) {
+        setShowOnboarding(true);
+      }
+    } catch (err) {
+      console.error('Error reloading app data in AppShell:', err);
     }
   };
 
@@ -208,6 +212,7 @@ export const AppShell: React.FC = () => {
               onRenameDocument={handleRenameDocument}
               onMoveDocumentToFolder={handleMoveDocumentToFolder}
               onDuplicateDocument={handleDuplicateDocument}
+              onDocumentsUpdated={reloadData}
             />
           )}
 
@@ -242,19 +247,6 @@ export const AppShell: React.FC = () => {
 
           {activeTab === 'settings' && <SettingsView />}
         </main>
-
-        {/* Libris Assistant Drawer */}
-        {showLibris && (
-          <LibrisAssistant
-            currentDocument={activeReadingDoc}
-            selectedTextPassage={librisPassage}
-            onClose={() => setShowLibris(false)}
-            onNavigateToCitation={async docId => {
-              const doc = await db.getDocumentById(docId);
-              if (doc) setActiveReadingDoc(doc);
-            }}
-          />
-        )}
       </div>
 
       {/* 3. Mobile Navigation Bar */}
@@ -273,6 +265,31 @@ export const AppShell: React.FC = () => {
             onOpenLibris={passage => {
               setLibrisPassage(passage);
               setShowLibris(true);
+            }}
+          />
+        </div>
+      )}
+
+      {/* 5. Libris Assistant Workstation Drawer (Top Layer Overlay) */}
+      {showLibris && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 2500,
+            boxShadow: 'var(--shadow-elevated)',
+            display: 'flex',
+          }}
+        >
+          <LibrisAssistant
+            currentDocument={activeReadingDoc}
+            selectedTextPassage={librisPassage}
+            onClose={() => setShowLibris(false)}
+            onNavigateToCitation={async docId => {
+              const doc = await db.getDocumentById(docId);
+              if (doc) setActiveReadingDoc(doc);
             }}
           />
         </div>

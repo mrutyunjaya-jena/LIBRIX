@@ -65,16 +65,43 @@
 
 .reader-stage {
   flex: 1;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
   overflow-y: auto;
-  padding: var(--space-8) var(--space-4);
+  overflow-x: hidden;
+  padding: 32px 16px 80px 16px;
   position: relative;
+  box-sizing: border-box;
 }
 
 /* Reading Paper / Content Container */
+.reader-page-sheet {
+  width: 100%;
+  margin: 0 auto 60px auto;
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  box-sizing: border-box;
+  overflow: visible;
+  height: auto !important;
+  display: block;
+  flex-shrink: 0;
+}
+
+.reader-sheet-content {
+  width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
 .reader-content-frame {
   width: 100%;
   max-width: var(--reader-max-width, 740px);
@@ -85,11 +112,22 @@
   font-size: var(--reader-font-size, 18px);
   letter-spacing: 0.01em;
   color: var(--text-primary);
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+.reader-content-frame * {
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .reader-content-frame p {
   margin-bottom: 1.4em;
   text-align: var(--reader-align, left);
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .reader-content-frame h1,
@@ -103,6 +141,7 @@
   color: var(--text-primary);
   line-height: 1.25;
   letter-spacing: 0.02em;
+  overflow-wrap: break-word;
 }
 
 .reader-content-frame h1 { font-size: 1.8em; }
@@ -131,35 +170,37 @@
 .scifi-highlight {
   background: var(--highlight-bg);
   border-bottom: 2px solid var(--highlight-border);
-  padding: 1px 2px;
+  padding: 2px 2px;
   border-radius: 2px;
+  color: inherit;
   cursor: pointer;
-  transition: background var(--transition-fast);
+  display: inline;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 .scifi-highlight:hover,
 .scifi-highlight.active {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.35);
   outline: 1px solid var(--text-primary);
 }
 
 body.theme-light .scifi-highlight:hover,
 body.theme-light .scifi-highlight.active {
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.22);
   outline: 1px solid #000000;
 }
 
 .selection-toolbar {
-  position: absolute;
+  position: fixed;
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   box-shadow: var(--shadow-lg);
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 3px;
-  z-index: 100;
+  gap: 4px;
+  padding: 4px 6px;
+  z-index: 3000;
 }
 
 /* Reader Bottom Progress Bar & Footer */
@@ -234,4 +275,141 @@ body.theme-light .scifi-highlight.active {
   flex: 1;
   overflow-y: auto;
   padding: var(--space-3);
+}
+
+/* ==========================================================================
+   PDF CANVAS & TEXT LAYER OVERLAY (100% LIBRIX NATIVE ENGINE)
+   ========================================================================== */
+.pdf-page-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 auto;
+  max-width: 100%;
+}
+
+.pdf-page-viewport {
+  position: relative;
+  box-shadow: var(--shadow-elevated);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  border: 1px solid var(--border-strong);
+  overflow: hidden;
+  display: block;
+}
+
+body.theme-dark .pdf-page-viewport {
+  background: #141414;
+}
+
+.pdf-canvas {
+  display: block;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
+.textLayer {
+  position: absolute;
+  text-align: initial;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  -webkit-text-size-adjust: none;
+     -moz-text-size-adjust: none;
+          text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+  user-select: text;
+  -webkit-user-select: text;
+  pointer-events: auto;
+}
+
+.textLayer span,
+.textLayer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer ::selection {
+  background: var(--highlight-bg, rgba(255, 255, 255, 0.35));
+  color: transparent;
+}
+
+/* ==========================================================================
+   RICH EPUB & DOCUMENT TYPOGRAPHY: BOXES, TABLES, CODE, FORMULAS & SYMBOLS
+   ========================================================================== */
+.reader-content-frame pre,
+.reader-content-frame code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-input);
+  border-radius: var(--radius-xs);
+}
+
+.reader-content-frame pre {
+  padding: var(--space-4);
+  border: 1px solid var(--border-medium);
+  overflow-x: auto;
+  margin: 1.5em 0;
+  line-height: 1.45;
+}
+
+.reader-content-frame code {
+  padding: 2px 5px;
+  border: 1px solid var(--border-subtle);
+}
+
+.reader-content-frame table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5em 0;
+  font-size: 0.9em;
+}
+
+.reader-content-frame th,
+.reader-content-frame td {
+  border: 1px solid var(--border-medium);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.reader-content-frame th {
+  background: var(--bg-surface-elevated);
+  font-family: var(--font-tech);
+  font-weight: 600;
+  font-size: 0.8em;
+  letter-spacing: 0.05em;
+}
+
+.reader-content-frame .box,
+.reader-content-frame .callout,
+.reader-content-frame .admonition,
+.reader-content-frame .sidebar,
+.reader-content-frame aside,
+.reader-content-frame div[class*="box"],
+.reader-content-frame div[class*="note"],
+.reader-content-frame div[class*="warning"],
+.reader-content-frame div[class*="tip"] {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-strong);
+  border-left: 4px solid var(--text-primary);
+  padding: var(--space-4);
+  margin: 1.5em 0;
+  border-radius: var(--radius-xs);
+}
+
+.reader-content-frame math,
+.reader-content-frame .katex,
+.reader-content-frame .math,
+.reader-content-frame var {
+  font-family: var(--font-serif);
+  font-style: italic;
+  letter-spacing: 0.02em;
 }

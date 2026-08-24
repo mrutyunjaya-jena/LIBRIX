@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DatabaseEngine } from '../src/core/db/DatabaseEngine';
-import { Folder } from '../src/core/types';
+import { Folder, Document } from '../src/core/types';
 
 describe('FolderOrganization & Nested Hierarchy', () => {
   let db: DatabaseEngine;
@@ -38,8 +38,25 @@ describe('FolderOrganization & Nested Hierarchy', () => {
   });
 
   it('moves documents into folders and queries them by folderId', async () => {
-    const docs = await db.getDocuments();
-    const targetDoc = docs[0];
+    const targetDoc: Document = {
+      id: 'doc_folder_test',
+      title: 'Options Volatility Trading',
+      author: 'Euan Sinclair',
+      filename: 'volatility.pdf',
+      format: 'pdf',
+      mimeType: 'application/pdf',
+      size: 5000,
+      hash: 'vol123',
+      storageProvider: 'local',
+      storagePath: '/test/volatility.pdf',
+      isFavorite: false,
+      isTrash: false,
+      tags: [],
+      collections: [],
+      createdAt: Date.now(),
+      modifiedAt: Date.now(),
+    };
+    await db.saveDocument(targetDoc);
 
     await db.moveDocumentToFolder(targetDoc.id, 'fld-test-child');
     const folderDocs = await db.getDocuments({ folderId: 'fld-test-child' });

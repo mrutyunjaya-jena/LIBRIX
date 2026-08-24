@@ -14,15 +14,24 @@ import {
 
 class WebSecureStorage implements ISecureStorage {
   private prefix = 'librix_sec_';
+  private memoryStore = new Map<string, string>();
+
+  private hasLocalStorage(): boolean {
+    return typeof localStorage !== 'undefined' && localStorage !== null;
+  }
 
   // Derives AES-GCM encryption key from device salt stored in localStorage
   private async getEncryptionKey(): Promise<CryptoKey> {
     const saltKey = 'librix_dev_salt';
-    let salt = localStorage.getItem(saltKey);
+    let salt = this.hasLocalStorage() ? localStorage.getItem(saltKey) : this.memoryStore.get(saltKey);
     if (!salt) {
       const randomBytes = crypto.getRandomValues(new Uint8Array(16));
       salt = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-      localStorage.setItem(saltKey, salt);
+      if (this.hasLocalStorage()) {
+        localStorage.setItem(saltKey, salt);
+      } else {
+        this.memoryStore.set(saltKey, salt);
+      }
     }
     const enc = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey(
@@ -48,7 +57,10 @@ class WebSecureStorage implements ISecureStorage {
 
   async getSecret(key: string): Promise<string | null> {
     try {
-      const stored = localStorage.getItem(this.prefix + key);
+      const stored = this.hasLocalStorage()
+        ? localStorage.getItem(this.prefix + key)
+        : this.memoryStore.get(this.prefix + key);
+
       if (!stored) return null;
       const parsed = JSON.parse(stored);
       const iv = new Uint8Array(parsed.iv);
@@ -78,11 +90,19 @@ class WebSecureStorage implements ISecureStorage {
       iv: Array.from(iv),
       data: Array.from(new Uint8Array(encrypted)),
     };
-    localStorage.setItem(this.prefix + key, JSON.stringify(payload));
+    if (this.hasLocalStorage()) {
+      localStorage.setItem(this.prefix + key, JSON.stringify(payload));
+    } else {
+      this.memoryStore.set(this.prefix + key, JSON.stringify(payload));
+    }
   }
 
   async deleteSecret(key: string): Promise<void> {
-    localStorage.removeItem(this.prefix + key);
+    if (this.hasLocalStorage()) {
+      localStorage.removeItem(this.prefix + key);
+    } else {
+      this.memoryStore.delete(this.prefix + key);
+    }
   }
 }
 
@@ -188,6 +208,7 @@ class WebFilePicker implements IFilePicker {
         }
         resolve(results);
       };
+      input.oncancel = () => resolve([]);
       input.click();
     });
   }
@@ -302,4 +323,9 @@ export class WebPlatform implements IPlatformServices {
       };
     },
   };
+
+  get name(): string {
+    return this.platform.os;
+  }
 }
+

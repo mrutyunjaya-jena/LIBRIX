@@ -76,6 +76,7 @@ export interface INetwork {
 }
 
 export interface IPlatformServices {
+  readonly name?: string;
   readonly platform: PlatformInfo;
   readonly fileSystem: IFileSystem;
   readonly filePicker: IFilePicker;

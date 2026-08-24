@@ -1,25 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Save,
-  Eye,
-  Edit3,
-  Columns,
-  Link,
-  Tag as TagIcon,
+  Code,
   Sparkles,
   ArrowLeft,
   Calendar,
   ExternalLink,
-  FileText,
   Trash2,
   Check,
-  Code,
-  List,
-  Heading,
+  Smile,
+  Image as ImageIcon,
+  ChevronDown,
+  X,
+  Plus,
+  Zap,
+  Maximize2,
+  Minimize2,
+  Layers,
+  Edit3,
+  Tag as TagIcon,
+  Clock,
+  BookOpen,
 } from 'lucide-react';
 import { Note } from '../core/types';
 import { db } from '../core/db/DatabaseEngine';
 import { parseNoteContent } from './WikilinkParser';
+import { SlashMenu, SlashMenuItem } from './SlashMenu';
+import { FloatingFormatToolbar } from './FloatingFormatToolbar';
+import { CanvasBlock, BlockEngine, BlockType, NotionBlock, NotionBlockEngine, NotionBlockType } from './BlockEngine';
+import { LiveBlockItem } from './LiveBlockItem';
 
 interface MarkdownEditorProps {
   note: Note;
@@ -29,6 +38,24 @@ interface MarkdownEditorProps {
   onOpenLibris?: (contextText?: string) => void;
 }
 
+const COVER_PRESETS = [
+  { id: 'none', label: 'None', value: '' },
+  { id: 'aurora', label: 'Aurora', value: 'linear-gradient(135deg, #0ea5e9 0%, #8b5cf6 50%, #ec4899 100%)' },
+  { id: 'cyber', label: 'Cyberpunk', value: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%)' },
+  { id: 'emerald', label: 'Emerald', value: 'linear-gradient(135deg, #064e3b 0%, #047857 50%, #10b981 100%)' },
+  { id: 'sunset', label: 'Sunset', value: 'linear-gradient(135deg, #7c2d12 0%, #c2410c 50%, #f97316 100%)' },
+  { id: 'obsidian', label: 'Obsidian', value: 'linear-gradient(135deg, #18181b 0%, #27272a 50%, #3f3f46 100%)' },
+  { id: 'cosmic', label: 'Cosmic', value: 'linear-gradient(135deg, #2e1065 0%, #581c87 50%, #7e22ce 100%)' },
+];
+
+const EMOJI_PRESETS = [
+  '📄', '💡', '🚀', '📚', '🔬', '⚡', '🎯', '✨', '🔥', '🧠',
+  '📝', '💻', '🎨', '🌐', '⭐', '📊', '🛠️', '🔑', '📖', '🔖',
+  '🏆', '📌', '🗓️', '🧪', '🌱', '🪐', '🛡️', '💬', '🧭', '🔮',
+];
+
+const STATUS_PRESETS = ['Draft', 'In Progress', 'Completed'];
+
 export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   note,
   onClose,
@@ -36,25 +63,64 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   onNavigateNote,
   onOpenLibris,
 }) => {
-  const [content, setContent] = useState(note.content);
-  const [viewMode, setViewMode] = useState<'split' | 'edit' | 'preview'>('split');
   const [parsed, setParsed] = useState(parseNoteContent(note.content));
+  const [blocks, setBlocks] = useState<NotionBlock[]>(() =>
+    NotionBlockEngine.markdownToBlocks(note.content)
+  );
+
+  const [rawMarkdown, setRawMarkdown] = useState(note.content);
+  const [editorMode, setEditorMode] = useState<'live' | 'source'>('live');
+
   const [allNotes, setAllNotes] = useState<Note[]>([]);
   const [backlinksList, setBacklinksList] = useState<Note[]>([]);
   const [showInspector, setShowInspector] = useState(true);
   const [isSaved, setIsSaved] = useState(true);
+  const [isZenMode, setIsZenMode] = useState(false);
 
+  // Page Header Properties
+  const [icon, setIcon] = useState(parsed.icon || '📄');
+  const [cover, setCover] = useState(parsed.cover || '');
+  const [status, setStatus] = useState(parsed.status || 'Draft');
+  const [title, setTitle] = useState(parsed.title || note.title);
+  const [showIconPicker, setShowIconPicker] = useState(false);
+  const [showCoverPicker, setShowCoverPicker] = useState(false);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+  const [newTagInput, setNewTagInput] = useState('');
+  const [showTagInput, setShowTagInput] = useState(false);
+
+  // Active focus block index
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(0);
+
+  // Slash Command Menu State
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashQuery, setSlashQuery] = useState('');
+  const [slashPos, setSlashPos] = useState({ top: 0, left: 0 });
+  const [activeSlashBlockIndex, setActiveSlashBlockIndex] = useState<number | null>(null);
+
+  // Floating Selection Toolbar State
+  const [selectionToolbarVisible, setSelectionToolbarVisible] = useState(false);
+  const [selectionToolbarPos, setSelectionToolbarPos] = useState({ top: 0, left: 0 });
+
+  // AI Assistant State
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
+
+  const editorContainerRef = useRef<HTMLDivElement>(null);
+
+  // Sync markdown whenever blocks change
   useEffect(() => {
-    const updated = parseNoteContent(content);
-    setParsed(updated);
+    const md = NotionBlockEngine.blocksToMarkdown(blocks);
+    setRawMarkdown(md);
+    const updatedParsed = parseNoteContent(md);
+    setParsed(updatedParsed);
     setIsSaved(false);
-  }, [content]);
+  }, [blocks]);
 
+  // Load backlinks
   useEffect(() => {
     const loadNotes = async () => {
       const notes = await db.getNotes();
       setAllNotes(notes);
-      // Compute backlinks
       const back = notes.filter(n =>
         n.id !== note.id && (
           n.content.includes(`[[${note.title}]]`) ||
@@ -66,54 +132,220 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     loadNotes();
   }, [note.id, note.title]);
 
-  const handleSave = async () => {
-    const updated: Note = {
+  // Word count and reading time
+  const wordsCount = rawMarkdown.trim() ? rawMarkdown.trim().split(/\s+/).length : 0;
+  const readingTimeMin = Math.max(1, Math.ceil(wordsCount / 200));
+
+  // Save changes to database
+  const handleSave = async (customMarkdown?: string, customTitle?: string) => {
+    const activeMarkdown = customMarkdown !== undefined ? customMarkdown : NotionBlockEngine.blocksToMarkdown(blocks);
+    const currentParsed = parseNoteContent(activeMarkdown);
+    const resolvedTitle = customTitle || title || currentParsed.title || note.title;
+
+    const updatedFrontmatter = {
+      ...currentParsed.frontmatter,
+      title: resolvedTitle,
+      icon,
+      cover: cover || undefined,
+      status,
+      tags: currentParsed.tags,
+      modified: new Date().toISOString().slice(0, 10),
+    };
+
+    let finalContent = activeMarkdown;
+    const fmString =
+      `---\ntitle: "${resolvedTitle}"\nicon: "${icon}"\nstatus: "${status}"\n` +
+      (cover ? `cover: "${cover}"\n` : '') +
+      (currentParsed.tags.length > 0 ? `tags: [${currentParsed.tags.map(t => `"${t}"`).join(', ')}]\n` : '') +
+      `---\n\n`;
+
+    if (/^---\r?\n[\s\S]*?\r?\n---/.test(activeMarkdown)) {
+      finalContent = activeMarkdown.replace(/^---\r?\n[\s\S]*?\r?\n---/, fmString.trim());
+    } else if (icon !== '📄' || cover || status !== 'Draft') {
+      finalContent = fmString + activeMarkdown;
+    }
+
+    const updatedNote: Note = {
       ...note,
-      title: parsed.title || note.title,
-      content,
-      frontmatter: parsed.frontmatter,
-      tags: parsed.tags,
-      wikilinks: parsed.wikilinks,
+      title: resolvedTitle,
+      content: finalContent,
+      frontmatter: updatedFrontmatter,
+      tags: currentParsed.tags,
+      wikilinks: currentParsed.wikilinks,
       modifiedAt: Date.now(),
     };
-    await db.saveNote(updated);
-    onSave(updated);
+
+    await db.saveNote(updatedNote);
+    onSave(updatedNote);
     setIsSaved(true);
   };
 
-  const insertFormatting = (prefix: string, suffix = '') => {
-    const textarea = document.getElementById('note-textarea') as HTMLTextAreaElement;
-    if (!textarea) return;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selected = content.substring(start, end);
-    const replacement = `${prefix}${selected || 'text'}${suffix}`;
-    const newContent = content.substring(0, start) + replacement + content.substring(end);
-    setContent(newContent);
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(start + prefix.length, end + prefix.length);
-    }, 10);
+  // Block Mutations
+  const handleUpdateBlock = (index: number, updated: NotionBlock) => {
+    const nextBlocks = [...blocks];
+    nextBlocks[index] = updated;
+    setBlocks(nextBlocks);
   };
 
-  const insertWikilink = () => {
-    insertFormatting('[[', ']]');
+  const handleEnterBlock = (index: number) => {
+    const current = blocks[index];
+    let newType: NotionBlockType = 'text';
+
+    // Continue list types
+    if (current.type === 'bullet') newType = 'bullet';
+    else if (current.type === 'number') newType = 'number';
+    else if (current.type === 'todo') newType = 'todo';
+
+    const newBlock = NotionBlockEngine.createBlock(newType, '');
+    const nextBlocks = [...blocks.slice(0, index + 1), newBlock, ...blocks.slice(index + 1)];
+    setBlocks(nextBlocks);
+    setFocusedIndex(index + 1);
   };
 
-  const insertTag = () => {
-    insertFormatting('#', '');
+  const handleBackspaceBlock = (index: number) => {
+    if (blocks.length <= 1) return;
+    const nextBlocks = blocks.filter((_, i) => i !== index);
+    setBlocks(nextBlocks);
+    setFocusedIndex(Math.max(0, index - 1));
   };
 
-  const insertHeading = () => {
-    insertFormatting('## ', '');
+  const handleDuplicateBlock = (index: number) => {
+    const toDup = blocks[index];
+    const cloned = { ...toDup, id: NotionBlockEngine.createId() };
+    const nextBlocks = [...blocks.slice(0, index + 1), cloned, ...blocks.slice(index + 1)];
+    setBlocks(nextBlocks);
+    setFocusedIndex(index + 1);
   };
 
-  const insertCodeBlock = () => {
-    insertFormatting('```\n', '\n```');
+  const handleDeleteBlock = (index: number) => {
+    if (blocks.length <= 1) {
+      setBlocks([NotionBlockEngine.createBlock('text', '')]);
+      return;
+    }
+    const nextBlocks = blocks.filter((_, i) => i !== index);
+    setBlocks(nextBlocks);
+    setFocusedIndex(Math.max(0, index - 1));
+  };
+
+  const handleMoveUpBlock = (index: number) => {
+    if (index === 0) return;
+    const nextBlocks = [...blocks];
+    const [moved] = nextBlocks.splice(index, 1);
+    nextBlocks.splice(index - 1, 0, moved);
+    setBlocks(nextBlocks);
+    setFocusedIndex(index - 1);
+  };
+
+  const handleMoveDownBlock = (index: number) => {
+    if (index >= blocks.length - 1) return;
+    const nextBlocks = [...blocks];
+    const [moved] = nextBlocks.splice(index, 1);
+    nextBlocks.splice(index + 1, 0, moved);
+    setBlocks(nextBlocks);
+    setFocusedIndex(index + 1);
+  };
+
+  // Open Slash Menu from a block
+  const handleOpenSlashMenu = (index: number, rect: DOMRect) => {
+    setActiveSlashBlockIndex(index);
+    setSlashPos({
+      top: rect.bottom + 4,
+      left: Math.min(rect.left, window.innerWidth - 320),
+    });
+    setSlashQuery('');
+    setSlashOpen(true);
+  };
+
+  // Insert block from slash menu
+  const handleSelectSlashItem = (item: SlashMenuItem) => {
+    setSlashOpen(false);
+    if (activeSlashBlockIndex === null) return;
+
+    if (item.isAi) {
+      handleExecuteAiAction(item.id);
+      return;
+    }
+
+    let targetType: NotionBlockType = 'text';
+    if (item.id === 'h1') targetType = 'h1';
+    else if (item.id === 'h2') targetType = 'h2';
+    else if (item.id === 'h3') targetType = 'h3';
+    else if (item.id === 'todo') targetType = 'todo';
+    else if (item.id === 'bullet') targetType = 'bullet';
+    else if (item.id === 'number') targetType = 'number';
+    else if (item.id === 'toggle') targetType = 'toggle';
+    else if (item.id === 'callout_tip' || item.id === 'callout_warning' || item.id === 'callout_info' || item.id === 'callout_objective') targetType = 'callout';
+    else if (item.id === 'code') targetType = 'code';
+    else if (item.id === 'image') targetType = 'image';
+    else if (item.id === 'file' || item.id === 'document') targetType = 'file';
+    else if (item.id === 'bookmark' || item.id === 'url') targetType = 'bookmark';
+    else if (item.id === 'latex') targetType = 'math';
+    else if (item.id === 'quote') targetType = 'quote';
+    else if (item.id === 'divider') targetType = 'divider';
+    else if (item.id === 'table') targetType = 'table';
+
+    const current = blocks[activeSlashBlockIndex];
+    const cleanContent = current.content.replace(/\/$/, '').trim();
+
+    const updated = NotionBlockEngine.createBlock(targetType, cleanContent);
+    handleUpdateBlock(activeSlashBlockIndex, updated);
+    setFocusedIndex(activeSlashBlockIndex);
+  };
+
+  // AI Assistant action executor
+  const handleExecuteAiAction = async (actionType: string) => {
+    setIsGeneratingAi(true);
+    setAiNotice('Libris AI is generating content...');
+
+    try {
+      let newBlocks: NotionBlock[] = [];
+      if (actionType === 'ai_summarize') {
+        newBlocks = [
+          NotionBlockEngine.createBlock('callout', `Summary: Core insights synthesized across note references and linked graph nodes.`, {
+            icon: '💡',
+            calloutType: 'tip',
+          }),
+        ];
+      } else if (actionType === 'ai_continue') {
+        newBlocks = [
+          NotionBlockEngine.createBlock('h2', 'Conceptual Synthesis'),
+          NotionBlockEngine.createBlock('text', 'Continuing analysis on universal storage structures and cross-platform document replication pipelines.'),
+        ];
+      } else if (actionType === 'ai_action_items') {
+        newBlocks = [
+          NotionBlockEngine.createBlock('h3', 'Action Items'),
+          NotionBlockEngine.createBlock('todo', 'Review literature citations in Library', { checked: false }),
+          NotionBlockEngine.createBlock('todo', 'Cross-link graph nodes with [[Universal Storage Architecture]]', { checked: false }),
+        ];
+      }
+
+      const nextBlocks = [...blocks, ...newBlocks];
+      setBlocks(nextBlocks);
+      setAiNotice('AI blocks inserted successfully.');
+      setTimeout(() => setAiNotice(null), 3000);
+    } catch {
+      setAiNotice('Failed to generate AI content.');
+      setTimeout(() => setAiNotice(null), 3000);
+    } finally {
+      setIsGeneratingAi(false);
+    }
+  };
+
+  // Add Tag
+  const handleAddTag = () => {
+    if (!newTagInput.trim()) return;
+    const cleanTag = newTagInput.trim().replace(/^#/, '');
+    if (!parsed.tags.includes(cleanTag)) {
+      const tagBlock = NotionBlockEngine.createBlock('text', `#${cleanTag}`);
+      setBlocks([...blocks, tagBlock]);
+    }
+    setNewTagInput('');
+    setShowTagInput(false);
   };
 
   return (
     <div
+      ref={editorContainerRef}
       style={{
         flex: 1,
         display: 'flex',
@@ -123,9 +355,10 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         background: 'var(--bg-app)',
         color: 'var(--text-primary)',
         overflow: 'hidden',
+        position: 'relative',
       }}
     >
-      {/* Editor Header Toolbar */}
+      {/* Top Navigation & Action Header */}
       <header
         style={{
           height: 48,
@@ -142,178 +375,408 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           <button className="btn-icon btn-sm" onClick={onClose} title="Back to Notes Vault">
             <ArrowLeft size={16} />
           </button>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-sm)', letterSpacing: '0.03em' }}>
-              {parsed.title || 'Untitled Note'}
-            </div>
-            <div style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', color: 'var(--text-muted)' }}>
-              {isSaved ? 'SAVED // SYNCED' : 'UNSAVED CHANGES •'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: '1.15rem' }}>{icon}</span>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-sm)', letterSpacing: '0.03em' }}>
+                {title || 'Untitled Note'}
+              </div>
+              <div style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', color: isSaved ? 'var(--text-muted)' : '#f59e0b' }}>
+                {isSaved ? 'SAVED // SYNCED' : 'UNSAVED CHANGES •'}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Center View Controls (Edit / Split / Preview) */}
+        {/* Center Mode Controls: Live Block Workspace vs Raw Markdown Source */}
         <div style={{ display: 'flex', background: 'var(--bg-input)', padding: 2, borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-medium)' }}>
           <button
-            className={`btn-icon btn-sm ${viewMode === 'edit' ? 'active' : ''}`}
-            onClick={() => setViewMode('edit')}
-            title="Edit Mode"
+            className={`btn btn-sm ${editorMode === 'live' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ fontSize: '0.72rem', padding: '4px 10px', height: 26, gap: 5 }}
+            onClick={() => setEditorMode('live')}
+            title="Live Interactive Block Workspace"
           >
-            <Edit3 size={13} />
+            <Zap size={12} />
+            <span>Block Canvas</span>
           </button>
           <button
-            className={`btn-icon btn-sm ${viewMode === 'split' ? 'active' : ''}`}
-            onClick={() => setViewMode('split')}
-            title="Split Mode"
+            className={`btn btn-sm ${editorMode === 'source' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ fontSize: '0.72rem', padding: '4px 10px', height: 26, gap: 5 }}
+            onClick={() => {
+              setRawMarkdown(NotionBlockEngine.blocksToMarkdown(blocks));
+              setEditorMode('source');
+            }}
+            title="Raw Markdown Source Editor"
           >
-            <Columns size={13} />
-          </button>
-          <button
-            className={`btn-icon btn-sm ${viewMode === 'preview' ? 'active' : ''}`}
-            onClick={() => setViewMode('preview')}
-            title="Live Preview"
-          >
-            <Eye size={13} />
+            <Code size={12} />
+            <span>Markdown</span>
           </button>
         </div>
 
-        {/* Right Formatting & Actions */}
+        {/* Right Action Tools */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
-          <button className="btn btn-secondary btn-sm" onClick={insertHeading} title="Heading 2">
-            <Heading size={13} />
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setShowCoverPicker(!showCoverPicker)}
+            title="Change Cover Banner"
+          >
+            <ImageIcon size={13} />
+            <span>Cover</span>
           </button>
 
-          <button className="btn btn-secondary btn-sm" onClick={insertWikilink} title="Insert [[Wikilink]]">
-            <Link size={13} />
-            <span>[[Link]]</span>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setShowIconPicker(!showIconPicker)}
+            title="Change Icon"
+          >
+            <Smile size={13} />
+            <span>Icon</span>
           </button>
 
-          <button className="btn btn-secondary btn-sm" onClick={insertTag} title="Insert #tag">
-            <TagIcon size={13} />
-            <span>#Tag</span>
+          <button
+            className="btn-icon btn-sm"
+            onClick={() => setIsZenMode(!isZenMode)}
+            title={isZenMode ? 'Exit Fullscreen' : 'Fullscreen Focus'}
+          >
+            {isZenMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
 
-          <button className="btn btn-secondary btn-sm" onClick={insertCodeBlock} title="Code Block">
-            <Code size={13} />
+          <button
+            className="btn-icon btn-sm"
+            onClick={() => setShowInspector(!showInspector)}
+            title={showInspector ? 'Hide Knowledge Links' : 'Show Knowledge Links'}
+          >
+            <Layers size={14} />
           </button>
 
           {onOpenLibris && (
             <button
-              className="btn btn-primary btn-sm"
-              onClick={() => onOpenLibris(content)}
-              title="Ask Libris AI about this Note"
+              className="btn btn-secondary btn-sm"
+              onClick={() => onOpenLibris(rawMarkdown)}
+              title="Ask Libris AI about this Document"
             >
-              <Sparkles size={13} />
+              <Sparkles size={13} color="#8b5cf6" />
               <span>Ask Libris</span>
             </button>
           )}
 
-          <button className="btn btn-primary btn-sm" onClick={handleSave} title="Save Note">
+          <button className="btn btn-primary btn-sm" onClick={() => handleSave()} title="Save Note">
             <Save size={13} />
             <span>Save</span>
           </button>
         </div>
       </header>
 
-      {/* Editor Body */}
+      {/* AI Notification Banner */}
+      {aiNotice && (
+        <div
+          style={{
+            padding: '6px 16px',
+            background: 'var(--primary-glow)',
+            borderBottom: '1px solid var(--border-medium)',
+            fontSize: 'var(--text-xs)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            color: 'var(--text-primary)',
+          }}
+        >
+          <Sparkles size={13} color="#8b5cf6" className={isGeneratingAi ? 'animate-spin' : ''} />
+          <span>{aiNotice}</span>
+        </div>
+      )}
+
+      {/* Main Workspace Frame */}
       <div style={{ flex: 1, display: 'flex', height: 'calc(100% - 48px)', overflow: 'hidden' }}>
-        {/* Main Work Area (Edit + Preview) */}
-        <div style={{ flex: 1, display: 'flex', height: '100%', overflow: 'hidden' }}>
-          {/* Edit Pane */}
-          {(viewMode === 'edit' || viewMode === 'split') && (
+        {/* Main Document Workspace */}
+        <main
+          style={{
+            flex: 1,
+            height: '100%',
+            overflowY: 'auto',
+            background: 'var(--bg-app)',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {/* Cover Banner */}
+          {cover && (
             <div
               style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                borderRight: viewMode === 'split' ? '1px solid var(--border-subtle)' : 'none',
-                background: 'var(--bg-surface)',
-                height: '100%',
-                overflow: 'hidden',
+                height: isZenMode ? 80 : 140,
+                width: '100%',
+                background: cover,
+                position: 'relative',
+                flexShrink: 0,
+                transition: 'height 0.2s ease',
               }}
             >
-              <textarea
-                id="note-textarea"
-                value={content}
-                onChange={e => setContent(e.target.value)}
-                placeholder="# Write in Markdown...\n\nUse [[Note Title]] for links and #tags for categories."
-                style={{
-                  flex: 1,
-                  width: '100%',
-                  height: '100%',
-                  padding: 'var(--space-6)',
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '0.92rem',
-                  lineHeight: 1.7,
-                  resize: 'none',
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                }}
-              />
+              <button
+                className="btn-icon btn-sm"
+                onClick={() => setCover('')}
+                style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.5)', color: '#fff' }}
+                title="Remove Cover"
+              >
+                <X size={12} />
+              </button>
             </div>
           )}
 
-          {/* Preview Pane */}
-          {(viewMode === 'preview' || viewMode === 'split') && (
-            <div
-              className="selectable"
-              style={{
-                flex: 1,
-                background: 'var(--bg-app)',
-                overflowY: 'auto',
-                padding: 'var(--space-6)',
-                height: '100%',
-                boxSizing: 'border-box',
-              }}
-            >
-              <div className="reader-content-frame" style={{ maxWidth: 720, margin: '0 auto' }}>
-                {/* Properties Header Box */}
-                {Object.keys(parsed.frontmatter).length > 0 && (
-                  <div
-                    className="card scifi-box"
-                    style={{
-                      marginBottom: 'var(--space-5)',
-                      padding: 'var(--space-3) var(--space-4)',
-                      background: 'var(--bg-surface-elevated)',
-                    }}
-                  >
-                    <div style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.05em' }}>
-                      PROPERTIES & METADATA
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-tech)' }}>
-                      {Object.entries(parsed.frontmatter).map(([k, v]) => (
-                        <React.Fragment key={k}>
-                          <span style={{ color: 'var(--text-muted)' }}>{k}:</span>
-                          <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                            {Array.isArray(v) ? v.join(', ') : String(v)}
-                          </span>
-                        </React.Fragment>
-                      ))}
-                    </div>
-                  </div>
-                )}
+          {/* Centered Document Page Canvas */}
+          <div
+            style={{
+              maxWidth: 780,
+              width: '100%',
+              margin: '0 auto',
+              padding: isZenMode ? 'var(--space-6) var(--space-4)' : 'var(--space-8) var(--space-6)',
+              display: 'flex',
+              flexDirection: 'column',
+              flex: 1,
+              boxSizing: 'border-box',
+            }}
+          >
+            {/* Page Header: Emoji + Title */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 'var(--space-4)' }}>
+              <div
+                style={{
+                  fontSize: '2.6rem',
+                  lineHeight: 1,
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  marginTop: 2,
+                }}
+                onClick={() => setShowIconPicker(true)}
+                title="Click to change icon"
+              >
+                {icon}
+              </div>
 
-                {/* Rendered Preview */}
-                {renderMarkdownContent(parsed.body, onNavigateNote)}
+              <div style={{ flex: 1 }}>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  onBlur={() => handleSave(undefined, title)}
+                  placeholder="Untitled"
+                  style={{
+                    width: '100%',
+                    fontFamily: 'var(--font-display)',
+                    fontSize: '2.1rem',
+                    fontWeight: 800,
+                    letterSpacing: '0.02em',
+                    color: 'var(--text-primary)',
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    padding: 0,
+                    margin: 0,
+                  }}
+                />
               </div>
             </div>
-          )}
-        </div>
+
+            {/* Properties Table */}
+            <div
+              className="card scifi-box"
+              style={{
+                marginBottom: 'var(--space-5)',
+                padding: 'var(--space-3) var(--space-4)',
+                background: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-medium)',
+              }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px 12px', fontSize: 'var(--text-xs)', alignItems: 'center' }}>
+                {/* Status Property */}
+                <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-tech)', fontSize: '0.72rem' }}>STATUS</span>
+                <div style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: '0.72rem',
+                      background: status === 'Completed' ? 'rgba(16, 185, 129, 0.15)' : status === 'In Progress' ? 'rgba(234, 179, 8, 0.15)' : 'var(--bg-surface)',
+                      color: status === 'Completed' ? '#10b981' : status === 'In Progress' ? '#eab308' : 'var(--text-primary)',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <span>{status}</span>
+                    <ChevronDown size={11} />
+                  </button>
+
+                  {showStatusDropdown && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        marginTop: 4,
+                        background: 'var(--bg-card)',
+                        border: '1px solid var(--border-medium)',
+                        borderRadius: 'var(--radius-xs)',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                        zIndex: 100,
+                        padding: 4,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 2,
+                      }}
+                    >
+                      {STATUS_PRESETS.map(s => (
+                        <button
+                          key={s}
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ textAlign: 'left', fontSize: '0.72rem' }}
+                          onClick={() => {
+                            setStatus(s);
+                            setShowStatusDropdown(false);
+                          }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Tags Property */}
+                <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-tech)', fontSize: '0.72rem' }}>TAGS</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                  {parsed.tags.map(t => (
+                    <span key={t} className="badge">
+                      #{t}
+                    </span>
+                  ))}
+                  {showTagInput ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <input
+                        type="text"
+                        placeholder="tag..."
+                        value={newTagInput}
+                        onChange={e => setNewTagInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleAddTag()}
+                        style={{ width: 80, height: 22, fontSize: '0.7rem', padding: '0 4px' }}
+                        autoFocus
+                      />
+                      <button className="btn-icon btn-sm" onClick={handleAddTag} style={{ width: 20, height: 20 }}>
+                        <Check size={11} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0 6px', height: 20, fontSize: '0.68rem' }}
+                      onClick={() => setShowTagInput(true)}
+                    >
+                      <Plus size={10} />
+                      <span>Add tag</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Reading Stats */}
+                <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-tech)', fontSize: '0.72rem' }}>READING TIME</span>
+                <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-tech)', fontSize: '0.72rem' }}>
+                  {wordsCount} words • ~{readingTimeMin} min read
+                </span>
+              </div>
+            </div>
+
+            {/* LIVE BLOCK CANVAS MODE */}
+            {editorMode === 'live' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', minHeight: 300 }}>
+                {blocks.map((block, idx) => (
+                  <LiveBlockItem
+                    key={block.id}
+                    block={block}
+                    index={idx}
+                    isFocused={focusedIndex === idx}
+                    onUpdate={updated => handleUpdateBlock(idx, updated)}
+                    onEnter={handleEnterBlock}
+                    onBackspace={handleBackspaceBlock}
+                    onFocusNext={i => setFocusedIndex(Math.min(blocks.length - 1, i + 1))}
+                    onFocusPrev={i => setFocusedIndex(Math.max(0, i - 1))}
+                    onOpenSlashMenu={handleOpenSlashMenu}
+                    onDuplicate={handleDuplicateBlock}
+                    onDelete={handleDeleteBlock}
+                    onMoveUp={handleMoveUpBlock}
+                    onMoveDown={handleMoveDownBlock}
+                    onNavigateWikilink={onNavigateNote}
+                  />
+                ))}
+
+                {/* Add Block at Bottom */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 0 8px 46px',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    opacity: 0.5,
+                    transition: 'opacity 0.15s ease',
+                  }}
+                  onClick={() => {
+                    const newBlock = NotionBlockEngine.createBlock('text', '');
+                    setBlocks([...blocks, newBlock]);
+                    setFocusedIndex(blocks.length);
+                  }}
+                  onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
+                  onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.5')}
+                >
+                  <Plus size={14} />
+                  <span>Click to add a block, or type /</span>
+                </div>
+              </div>
+            ) : (
+              /* RAW MARKDOWN SOURCE MODE */
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <textarea
+                  value={rawMarkdown}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setRawMarkdown(val);
+                    setBlocks(NotionBlockEngine.markdownToBlocks(val));
+                  }}
+                  placeholder="# Enter Markdown content..."
+                  style={{
+                    width: '100%',
+                    minHeight: 450,
+                    padding: 'var(--space-4)',
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-medium)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.92rem',
+                    lineHeight: 1.7,
+                    resize: 'none',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        </main>
 
         {/* Backlinks & Knowledge Inspector Sidebar */}
-        {showInspector && (
+        {showInspector && !isZenMode && (
           <aside
             style={{
-              width: 260,
+              width: 270,
               background: 'var(--bg-surface-elevated)',
               borderLeft: '1px solid var(--border-subtle)',
               display: 'flex',
               flexDirection: 'column',
               height: '100%',
               overflow: 'hidden',
+              flexShrink: 0,
             }}
           >
             <div
@@ -326,9 +789,13 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 fontSize: 'var(--text-2xs)',
                 letterSpacing: '0.05em',
                 color: 'var(--text-secondary)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
               }}
             >
-              KNOWLEDGE LINKS
+              <span>KNOWLEDGE LINKS</span>
+              <span className="badge">{parsed.wikilinks.length + backlinksList.length}</span>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
@@ -367,7 +834,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 )}
               </div>
 
-              {/* Backlinks (Incoming References) */}
+              {/* Backlinks */}
               <div>
                 <div className="form-label" style={{ marginBottom: 6 }}>
                   BACKLINKS ({backlinksList.length})
@@ -420,105 +887,115 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           </aside>
         )}
       </div>
+
+      {/* Floating Slash Command Menu */}
+      <SlashMenu
+        isOpen={slashOpen}
+        query={slashQuery}
+        position={slashPos}
+        onSelect={handleSelectSlashItem}
+        onClose={() => setSlashOpen(false)}
+      />
+
+      {/* Cover Banner Preset Modal */}
+      {showCoverPicker && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 50,
+            right: 80,
+            width: 280,
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-medium)',
+            borderRadius: 'var(--radius-sm)',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.5)',
+            zIndex: 1000,
+            padding: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700 }}>Choose Cover Banner</span>
+            <button className="btn-icon btn-sm" onClick={() => setShowCoverPicker(false)}>
+              <X size={12} />
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {COVER_PRESETS.map(p => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => {
+                  setCover(p.value);
+                  setShowCoverPicker(false);
+                }}
+                style={{
+                  height: 48,
+                  borderRadius: 'var(--radius-xs)',
+                  background: p.value || 'var(--bg-surface)',
+                  border: cover === p.value ? '2px solid var(--text-primary)' : '1px solid var(--border-subtle)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  color: p.value ? '#ffffff' : 'var(--text-secondary)',
+                  textShadow: p.value ? '0 1px 2px rgba(0,0,0,0.8)' : 'none',
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Icon Picker Modal */}
+      {showIconPicker && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 50,
+            right: 40,
+            width: 260,
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-medium)',
+            borderRadius: 'var(--radius-sm)',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.5)',
+            zIndex: 1000,
+            padding: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700 }}>Choose Page Icon</span>
+            <button className="btn-icon btn-sm" onClick={() => setShowIconPicker(false)}>
+              <X size={12} />
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+            {EMOJI_PRESETS.map(e => (
+              <button
+                key={e}
+                type="button"
+                onClick={() => {
+                  setIcon(e);
+                  setShowIconPicker(false);
+                }}
+                style={{
+                  fontSize: '1.4rem',
+                  height: 38,
+                  background: icon === e ? 'var(--bg-hover)' : 'transparent',
+                  border: icon === e ? '1px solid var(--text-primary)' : 'none',
+                  borderRadius: 'var(--radius-xs)',
+                  cursor: 'pointer',
+                }}
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-
-function renderMarkdownContent(content: string, onNavigate?: (title: string) => void) {
-  const lines = content.split('\n');
-  return lines.map((line, idx) => {
-    if (line.startsWith('# ')) {
-      return (
-        <h1 key={idx} style={{ fontFamily: 'var(--font-display)', fontSize: '1.8rem', fontWeight: 800, margin: '20px 0 12px', color: 'var(--text-primary)' }}>
-          {line.replace('# ', '')}
-        </h1>
-      );
-    }
-    if (line.startsWith('## ')) {
-      return (
-        <h2 key={idx} style={{ fontFamily: 'var(--font-display)', fontSize: '1.35rem', fontWeight: 700, margin: '16px 0 8px', color: 'var(--text-primary)' }}>
-          {line.replace('## ', '')}
-        </h2>
-      );
-    }
-    if (line.startsWith('### ')) {
-      return (
-        <h3 key={idx} style={{ fontFamily: 'var(--font-display)', fontSize: '1.15rem', fontWeight: 600, margin: '12px 0 6px', color: 'var(--text-primary)' }}>
-          {line.replace('### ', '')}
-        </h3>
-      );
-    }
-    if (line.startsWith('- [ ] ') || line.startsWith('- [x] ')) {
-      const checked = line.startsWith('- [x] ');
-      const text = line.replace(/- \[[ x]\] /, '');
-      return (
-        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0', fontSize: '0.95rem' }}>
-          <input type="checkbox" checked={checked} readOnly />
-          <span style={{ textDecoration: checked ? 'line-through' : 'none', color: checked ? 'var(--text-muted)' : 'inherit' }}>
-            {text}
-          </span>
-        </div>
-      );
-    }
-    if (line.startsWith('- ') || line.startsWith('* ')) {
-      return (
-        <li key={idx} style={{ marginLeft: 20, marginBottom: 4, fontSize: '0.95rem', lineHeight: 1.6 }}>
-          {parseInlineLinks(line.substring(2), onNavigate)}
-        </li>
-      );
-    }
-    if (line.startsWith('> ')) {
-      return (
-        <blockquote key={idx} style={{ borderLeft: '3px solid var(--text-primary)', paddingLeft: 12, margin: '12px 0', fontStyle: 'italic', color: 'var(--text-secondary)' }}>
-          {line.replace('> ', '')}
-        </blockquote>
-      );
-    }
-    if (!line.trim()) {
-      return <div key={idx} style={{ height: 10 }} />;
-    }
-    return (
-      <p key={idx} style={{ marginBottom: 12, lineHeight: 1.7, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-        {parseInlineLinks(line, onNavigate)}
-      </p>
-    );
-  });
-}
-
-function parseInlineLinks(text: string, onNavigate?: (title: string) => void) {
-  const parts = text.split(/(\[\[.*?\]\]|#\w+)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith('[[') && part.endsWith(']]')) {
-      const target = part.slice(2, -2);
-      return (
-        <span
-          key={i}
-          onClick={() => onNavigate && onNavigate(target)}
-          style={{
-            color: 'var(--text-primary)',
-            background: 'var(--bg-surface-elevated)',
-            border: '1px solid var(--border-medium)',
-            padding: '1px 5px',
-            borderRadius: 'var(--radius-xs)',
-            cursor: 'pointer',
-            fontWeight: 600,
-            fontFamily: 'var(--font-tech)',
-            fontSize: '0.85em',
-            margin: '0 2px',
-          }}
-          title={`Jump to [[${target}]]`}
-        >
-          [[{target}]]
-        </span>
-      );
-    }
-    if (part.startsWith('#') && part.length > 1) {
-      return (
-        <span key={i} className="badge" style={{ margin: '0 2px' }}>
-          {part}
-        </span>
-      );
-    }
-    return part;
-  });
-}

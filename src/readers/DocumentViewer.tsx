@@ -23,8 +23,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 }) => {
   const platform = usePlatform();
 
-  // EPUB
-  if (document.format === 'epub' || document.format === 'mobi' || document.format === 'azw3') {
+  // EPUB (zip-based format only — mobi/azw3 are not zips and must use the fallback)
+  if (document.format === 'epub') {
     return (
       <EpubReader
         document={document}

@@ -1,9 +1,11 @@
 import { IStorageProvider, StorageItem } from './StorageProvider';
 import { LocalStorageProvider } from './providers/LocalStorageProvider';
 import { GoogleDriveProvider } from './providers/GoogleDriveProvider';
-import { TelegramStorageProvider } from './providers/TelegramStorageProvider';
+import { OneDriveProvider } from './providers/OneDriveProvider';
 import { MegaProvider } from './providers/MegaProvider';
-import { TeraBoxProvider, MediaFireProvider, CustomStorageProvider } from './providers/OtherCloudProviders';
+import { TeraBoxProvider } from './providers/TeraBoxProvider';
+import { TelegramStorageProvider } from './providers/TelegramStorageProvider';
+import { CustomStorageProvider, CustomProtocolType } from './providers/CustomStorageProvider';
 import { IPlatformServices } from '../platform/PlatformInterface';
 import { getPlatformServices } from '../platform/PlatformFactory';
 import { StorageProviderType } from '../core/types';
@@ -29,17 +31,17 @@ export class StorageRegistry {
   private registerDefaultProviders(): void {
     const local = new LocalStorageProvider(this.platform, 'local', 'Local Storage');
     const gdrive = new GoogleDriveProvider(this.platform, 'gdrive-main', 'Google Drive');
+    const onedrive = new OneDriveProvider('onedrive-main', 'Microsoft OneDrive', this.platform);
+    const mega = new MegaProvider('mega-main', 'MEGA Cloud', this.platform);
+    const terabox = new TeraBoxProvider('terabox-main', 'TeraBox', this.platform);
     const telegram = new TelegramStorageProvider(this.platform, 'telegram-vault', 'Telegram Vault');
-    const mega = new MegaProvider(this.platform, 'mega-store', 'MEGA Archive');
-    const terabox = new TeraBoxProvider(this.platform, 'terabox-main', 'TeraBox');
-    const mediafire = new MediaFireProvider(this.platform, 'mediafire-main', 'MediaFire');
 
     this.registerProvider(local);
     this.registerProvider(gdrive);
-    this.registerProvider(telegram);
+    this.registerProvider(onedrive);
     this.registerProvider(mega);
     this.registerProvider(terabox);
-    this.registerProvider(mediafire);
+    this.registerProvider(telegram);
   }
 
   public registerProvider(provider: IStorageProvider): void {
@@ -68,19 +70,40 @@ export class StorageRegistry {
     id: string;
     name: string;
     type: StorageProviderType;
+    protocol?: CustomProtocolType;
     endpointUrl?: string;
+    username?: string;
+    password?: string;
+    apiKey?: string;
+    bucket?: string;
+    region?: string;
   }): IStorageProvider {
     let provider: IStorageProvider;
     if (config.type === 'gdrive') {
       provider = new GoogleDriveProvider(this.platform, config.id, config.name);
+    } else if (config.type === 'onedrive') {
+      provider = new OneDriveProvider(config.id, config.name, this.platform);
+    } else if (config.type === 'mega') {
+      provider = new MegaProvider(config.id, config.name, this.platform);
+    } else if (config.type === 'terabox') {
+      provider = new TeraBoxProvider(config.id, config.name, this.platform);
     } else if (config.type === 'telegram') {
       provider = new TelegramStorageProvider(this.platform, config.id, config.name);
-    } else if (config.type === 'mega') {
-      provider = new MegaProvider(this.platform, config.id, config.name);
-    } else if (config.type === 'terabox') {
-      provider = new TeraBoxProvider(this.platform, config.id, config.name);
     } else {
-      provider = new CustomStorageProvider(this.platform, config.id, config.name, config.endpointUrl);
+      provider = new CustomStorageProvider(
+        {
+          id: config.id,
+          name: config.name,
+          protocol: config.protocol || 'webdav',
+          endpointUrl: config.endpointUrl || 'https://storage.internal/dav',
+          username: config.username,
+          password: config.password,
+          apiKey: config.apiKey,
+          bucket: config.bucket,
+          region: config.region,
+        },
+        this.platform
+      );
     }
     this.registerProvider(provider);
     return provider;

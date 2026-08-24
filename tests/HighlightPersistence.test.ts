@@ -33,6 +33,22 @@ describe('Highlighting & Annotation Persistence', () => {
     expect(found?.note).toBe('Crucial invariant of the borrow checker.');
   });
 
+  it('matches multi-line and irregular whitespace selections reliably', () => {
+    const rawChapterHtml = `
+      <p>Ownership is the most unique feature of modern systems languages,
+         and it enables memory safety guarantees.</p>
+    `;
+    const selectedText = 'Ownership is the most unique feature';
+
+    const words = selectedText.trim().split(/\s+/);
+    const escapedWords = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const pattern = escapedWords.join('\\s+');
+    const regex = new RegExp(`(${pattern})`, 'gi');
+
+    const result = rawChapterHtml.replace(regex, '<mark class="scifi-highlight">$1</mark>');
+    expect(result).toContain('<mark class="scifi-highlight">Ownership is the most unique feature</mark>');
+  });
+
   it('updates annotation note and deletes annotation', async () => {
     await db.updateAnnotationNote('annot_test_1', 'Updated note content.');
     let docAnnots = await db.getAnnotations('doc-1');

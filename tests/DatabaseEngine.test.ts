@@ -10,12 +10,11 @@ describe('DatabaseEngine', () => {
     await db.initialize();
   });
 
-  it('should initialize and load default library documents', async () => {
-    const docs = await db.getDocuments();
-    expect(docs.length).toBeGreaterThan(0);
-    const rustDoc = docs.find(d => d.title.includes('Rust'));
-    expect(rustDoc).toBeDefined();
-    expect(rustDoc?.format).toBe('epub');
+  it('should initialize clean workstation vault without demo books', async () => {
+    const clouds = await db.getCloudConnections();
+    expect(clouds.length).toBeGreaterThan(0);
+    const providers = await db.getAIProviders();
+    expect(providers.length).toBeGreaterThan(0);
   });
 
   it('should support document CRUD operations and progress updates', async () => {
@@ -59,10 +58,29 @@ describe('DatabaseEngine', () => {
   });
 
   it('should manage notes and collections', async () => {
+    const newCol: Collection = {
+      id: 'col_test_1',
+      name: 'Test Collection',
+      createdAt: Date.now(),
+    };
+    await db.saveCollection(newCol);
     const cols = await db.getCollections();
-    expect(cols.length).toBeGreaterThan(0);
+    expect(cols.some(c => c.id === 'col_test_1')).toBe(true);
 
+    const newNote: Note = {
+      id: 'note_test_1',
+      title: 'Unit Note',
+      slug: 'unit-note',
+      content: 'Unit test content',
+      frontmatter: {},
+      tags: ['Test'],
+      wikilinks: [],
+      backlinks: [],
+      createdAt: Date.now(),
+      modifiedAt: Date.now(),
+    };
+    await db.saveNote(newNote);
     const notes = await db.getNotes();
-    expect(notes.length).toBeGreaterThan(0);
+    expect(notes.some(n => n.id === 'note_test_1')).toBe(true);
   });
 });

@@ -724,3 +724,292 @@ input:checked + .slider:before {
   font-style: italic;
 }
 
+/* ==========================================================================
+   NOTION-STYLE RICH BLOCKS & COMPONENTS
+   ========================================================================== */
+
+/* Callout Boxes */
+.notion-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  margin: 1.2em 0;
+  background: var(--bg-surface-elevated);
+  border-left: 4px solid var(--border-strong);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.notion-callout-icon {
+  font-size: 1.2rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.notion-callout-text {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.notion-callout-tip {
+  border-left-color: #eab308;
+  background: rgba(234, 179, 8, 0.08);
+}
+
+.notion-callout-warning {
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.notion-callout-info {
+  border-left-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.notion-callout-important {
+  border-left-color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.notion-callout-feature {
+  border-left-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.08);
+}
+
+/* Checklists & Tasks */
+.notion-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0.4em 0;
+  line-height: 1.5;
+}
+
+.notion-task-checkbox {
+  margin-top: 4px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+  width: 15px;
+  height: 15px;
+}
+
+.notion-task-label {
+  flex: 1;
+  transition: opacity 0.2s ease, text-decoration 0.2s ease;
+}
+
+.notion-task-checked .notion-task-label {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+/* Tables */
+.notion-table-wrapper {
+  overflow-x: auto;
+  margin: 1.4em 0;
+}
+
+.notion-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+}
+
+.notion-table th {
+  background: var(--bg-surface-elevated);
+  font-weight: 700;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--border-medium);
+  border-right: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.notion-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.notion-table tr:hover td {
+  background: var(--bg-surface-hover);
+}
+
+/* Highlights */
+.notion-highlight {
+  background: rgba(234, 179, 8, 0.25);
+  color: inherit;
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+/* Dividers */
+.notion-divider {
+  border: none;
+  border-top: 1px solid var(--border-medium);
+  margin: 2em 0;
+}
+
+/* Code block language tag */
+.code-lang-tag {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-family: var(--font-tech);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+/* Notion Toggle Lists */
+.notion-toggle,
+details.notion-toggle,
+details {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 8px 12px;
+  margin: 0.8em 0;
+  transition: background var(--transition-fast);
+}
+
+.notion-toggle summary,
+details summary {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notion-toggle summary::-webkit-details-marker,
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+.notion-toggle summary::before,
+details summary::before {
+  content: '▶';
+  font-size: 0.72rem;
+  display: inline-block;
+  transition: transform 0.18s ease;
+  color: var(--text-muted);
+}
+
+.notion-toggle[open] summary::before,
+details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.notion-toggle-content,
+details > *:not(summary) {
+  margin-top: 8px;
+  padding-left: 20px;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+/* ==========================================================================
+   INTERACTIVE BLOCK CANVAS & LEFT GUTTER HANDLES
+   ========================================================================== */
+.notion-block-row {
+  border-radius: var(--radius-xs);
+  transition: background var(--transition-fast);
+}
+
+.notion-block-row:hover {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.notion-handle-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-xs);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all var(--transition-fast);
+}
+
+.notion-handle-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Block Inputs */
+.notion-block-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  padding: 2px 0;
+  resize: none;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.notion-block-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.4;
+}
+
+.notion-input-h1 {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  margin: 8px 0 2px 0;
+}
+
+.notion-input-h2 {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 6px 0 2px 0;
+}
+
+.notion-input-h3 {
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 4px 0 2px 0;
+}
+
+.notion-task-checked-text {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.notion-code-input {
+  font-family: var(--font-mono) !important;
+  font-size: 0.85rem !important;
+  padding: 8px 12px !important;
+  background: var(--bg-input) !important;
+  color: var(--text-primary);
+}
+
+
+
+

@@ -22,10 +22,10 @@ export type DocumentFormat =
 export type StorageProviderType =
   | 'local'
   | 'gdrive'
+  | 'onedrive'
   | 'mega'
-  | 'mediafire'
-  | 'onebox'
   | 'terabox'
+  | 'mediafire'
   | 'telegram'
   | 'custom';
 

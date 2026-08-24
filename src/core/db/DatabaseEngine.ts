@@ -79,328 +79,91 @@ export class DatabaseEngine {
   private loadFromStorage(): void {
     if (typeof localStorage === 'undefined') return;
     try {
-      const loadTable = <T extends { id: string }>(key: string, map: Map<string, T>) => {
+      const loadTable = <T extends { id: string }>(key: string, map: Map<string, T>, filterDemo = true) => {
         const raw = localStorage.getItem(key);
         if (raw) {
           const items: T[] = JSON.parse(raw);
-          items.forEach(i => map.set(i.id, i));
+          items.forEach(i => {
+            // Filter out old demo seeds
+            if (filterDemo && (
+              i.id.startsWith('doc-') ||
+              i.id.startsWith('note-') ||
+              i.id.startsWith('annot-') ||
+              i.id.startsWith('fld-') ||
+              i.id.startsWith('col-') ||
+              i.id.startsWith('tag-')
+            )) {
+              return;
+            }
+            map.set(i.id, i);
+          });
         }
       };
 
-      loadTable('librix_db_docs', this.documents);
-      loadTable('librix_db_folders', this.folders);
-      loadTable('librix_db_cols', this.collections);
-      loadTable('librix_db_tags', this.tags);
-      loadTable('librix_db_bmarks', this.bookmarks);
-      loadTable('librix_db_annots', this.annotations);
-      loadTable('librix_db_notes', this.notes);
-      loadTable('librix_db_clouds', this.cloudConnections);
-      loadTable('librix_db_sync_q', this.syncQueue);
-      loadTable('librix_db_conflicts', this.syncConflicts);
-      loadTable('librix_db_chats', this.chatSessions);
-      loadTable('librix_db_aiproviders', this.aiProviders);
+      loadTable('librix_db_docs', this.documents, true);
+      loadTable('librix_db_folders', this.folders, true);
+      loadTable('librix_db_cols', this.collections, true);
+      loadTable('librix_db_tags', this.tags, true);
+      loadTable('librix_db_bmarks', this.bookmarks, true);
+      loadTable('librix_db_annots', this.annotations, true);
+      loadTable('librix_db_notes', this.notes, true);
+      loadTable('librix_db_clouds', this.cloudConnections, false);
+      loadTable('librix_db_sync_q', this.syncQueue, false);
+      loadTable('librix_db_conflicts', this.syncConflicts, false);
+      loadTable('librix_db_chats', this.chatSessions, false);
+      loadTable('librix_db_aiproviders', this.aiProviders, false);
     } catch (e) {
       console.error('Failed to load database from storage:', e);
     }
   }
 
   private seedInitialData(): void {
-    // Seed Nested Folders
-    const initialFolders: Folder[] = [
-      { id: 'fld-prog', name: 'Programming', parentId: null, path: '/Programming', createdAt: Date.now(), modifiedAt: Date.now() },
-      { id: 'fld-rust', name: 'Rust & Systems', parentId: 'fld-prog', path: '/Programming/Rust & Systems', createdAt: Date.now(), modifiedAt: Date.now() },
-      { id: 'fld-arch', name: 'Architecture & Distributed', parentId: 'fld-prog', path: '/Programming/Architecture & Distributed', createdAt: Date.now(), modifiedAt: Date.now() },
-      { id: 'fld-fin', name: 'Finance & Trading', parentId: null, path: '/Finance & Trading', createdAt: Date.now(), modifiedAt: Date.now() },
-      { id: 'fld-quant', name: 'Quant & Derivatives', parentId: 'fld-fin', path: '/Finance & Trading/Quant & Derivatives', createdAt: Date.now(), modifiedAt: Date.now() },
-      { id: 'fld-ai', name: 'Research & AI', parentId: null, path: '/Research & AI', createdAt: Date.now(), modifiedAt: Date.now() },
-      { id: 'fld-rag', name: 'RAG & Knowledge Graphs', parentId: 'fld-ai', path: '/Research & AI/RAG & Knowledge Graphs', createdAt: Date.now(), modifiedAt: Date.now() },
-      { id: 'fld-phil', name: 'Philosophy', parentId: null, path: '/Philosophy', createdAt: Date.now(), modifiedAt: Date.now() },
-    ];
-    initialFolders.forEach(f => this.folders.set(f.id, f));
-
-    // Seed Collections
-    const cols: Collection[] = [
-      { id: 'col-1', name: 'Systems & Architecture', description: 'Low-level systems and distributed infrastructure', createdAt: Date.now() },
-      { id: 'col-2', name: 'AI & Knowledge Graphs', description: 'Transformers, vectors, RAG and agents', createdAt: Date.now() },
-      { id: 'col-3', name: 'Philosophy of Mind', description: 'Epistemology and rational cognition', createdAt: Date.now() },
-    ];
-    cols.forEach(c => this.collections.set(c.id, c));
-
-    // Seed Tags
-    const tags: Tag[] = [
-      { id: 'tag-1', name: 'Rust' },
-      { id: 'tag-2', name: 'Architecture' },
-      { id: 'tag-3', name: 'AI-Agents' },
-      { id: 'tag-4', name: 'Algorithms' },
-      { id: 'tag-5', name: 'Epistemology' },
-      { id: 'tag-6', name: 'Privacy' },
-    ];
-    tags.forEach(t => this.tags.set(t.id, t));
-
-    // Seed Documents with folder mappings
-    const docs: Document[] = [
-      {
-        id: 'doc-1',
-        title: 'The Rust Programming Language',
-        author: 'Steve Klabnik & Carol Nichols',
-        filename: 'The_Rust_Programming_Language.epub',
-        format: 'epub',
-        mimeType: 'application/epub+zip',
-        size: 4820000,
-        hash: 'a94f82c',
-        storageProvider: 'local',
-        storagePath: '/Programming/Rust & Systems/The_Rust_Programming_Language.epub',
-        folderId: 'fld-rust',
-        isFavorite: true,
-        isTrash: false,
-        tags: ['Rust', 'Architecture'],
-        collections: ['col-1'],
-        readingProgress: { percentage: 42, currentLocation: 'chapter-4', updatedAt: Date.now() - 3600000 },
-        contentSnippet: 'Rust is a systems programming language that empowers everyone to build reliable and efficient software. Memory safety without garbage collection is its signature achievement.',
-        createdAt: Date.now() - 86400000 * 5,
-        modifiedAt: Date.now() - 86400000 * 2,
-        lastOpenedAt: Date.now() - 3600000,
-      },
-      {
-        id: 'doc-2',
-        title: 'Designing Data-Intensive Applications',
-        author: 'Martin Kleppmann',
-        filename: 'Designing_Data_Intensive_Applications.pdf',
-        format: 'pdf',
-        mimeType: 'application/pdf',
-        size: 14500000,
-        hash: 'b12c98d',
-        storageProvider: 'gdrive',
-        storagePath: 'GoogleDrive://Programming/Architecture & Distributed/Designing_Data_Intensive_Applications.pdf',
-        folderId: 'fld-arch',
-        isFavorite: true,
-        isTrash: false,
-        tags: ['Architecture', 'Algorithms'],
-        collections: ['col-1'],
-        readingProgress: { percentage: 78, currentLocation: 'page-214', updatedAt: Date.now() - 7200000 },
-        contentSnippet: 'Data systems are at the heart of modern software. This book explores storage engines, replication, partitioning, transactions, and consensus protocols.',
-        createdAt: Date.now() - 86400000 * 12,
-        modifiedAt: Date.now() - 86400000 * 4,
-        lastOpenedAt: Date.now() - 7200000,
-      },
-      {
-        id: 'doc-3',
-        title: 'Attention Is All You Need',
-        author: 'Vaswani et al. (Google Brain)',
-        filename: 'Attention_Is_All_You_Need.pdf',
-        format: 'pdf',
-        mimeType: 'application/pdf',
-        size: 2200000,
-        hash: 'c87d41f',
-        storageProvider: 'telegram',
-        storagePath: 'Telegram://Research & AI/Attention_Is_All_You_Need.pdf',
-        folderId: 'fld-ai',
-        isFavorite: false,
-        isTrash: false,
-        tags: ['AI-Agents', 'Algorithms'],
-        collections: ['col-2'],
-        readingProgress: { percentage: 100, currentLocation: 'page-1', updatedAt: Date.now() - 86400000 },
-        contentSnippet: 'The dominant sequence transduction models are based on complex recurrent or convolutional neural networks. We propose the Transformer, a model architecture eschewing recurrence and relying entirely on an attention mechanism.',
-        createdAt: Date.now() - 86400000 * 20,
-        modifiedAt: Date.now() - 86400000 * 8,
-        lastOpenedAt: Date.now() - 86400000,
-      },
-      {
-        id: 'doc-4',
-        title: 'Clean Architecture in Modern Systems',
-        author: 'Robert C. Martin',
-        filename: 'Clean_Architecture.epub',
-        format: 'epub',
-        mimeType: 'application/epub+zip',
-        size: 3800000,
-        hash: 'd45e12a',
-        storageProvider: 'mega',
-        storagePath: 'MEGA://Programming/Clean_Architecture.epub',
-        folderId: 'fld-prog',
-        isFavorite: false,
-        isTrash: false,
-        tags: ['Architecture'],
-        collections: ['col-1'],
-        readingProgress: { percentage: 18, currentLocation: 'chapter-2', updatedAt: Date.now() - 86400000 * 3 },
-        contentSnippet: 'The center of your application is not the database. Nor is it one of the frameworks you may be using. The center of your application is the use cases of your application.',
-        createdAt: Date.now() - 86400000 * 15,
-        modifiedAt: Date.now() - 86400000 * 3,
-        lastOpenedAt: Date.now() - 86400000 * 3,
-      },
-      {
-        id: 'doc-5',
-        title: 'Meditationes de Prima Philosophia',
-        author: 'René Descartes',
-        filename: 'Meditations_on_First_Philosophy.md',
-        format: 'markdown',
-        mimeType: 'text/markdown',
-        size: 98000,
-        hash: 'e99b33c',
-        storageProvider: 'local',
-        storagePath: '/Philosophy/Meditations_on_First_Philosophy.md',
-        folderId: 'fld-phil',
-        isFavorite: true,
-        isTrash: false,
-        tags: ['Epistemology'],
-        collections: ['col-3'],
-        readingProgress: { percentage: 65, currentLocation: 'line-420', updatedAt: Date.now() - 86400000 * 2 },
-        contentSnippet: 'Cogito, ergo sum. I noticed that while I was wishing to think everything false, it was necessarily true that I who thought so was something.',
-        createdAt: Date.now() - 86400000 * 30,
-        modifiedAt: Date.now() - 86400000 * 2,
-        lastOpenedAt: Date.now() - 86400000 * 2,
-      },
-      {
-        id: 'doc-6',
-        title: 'Decentralized Vector Indexes & RAG Architecture',
-        author: 'Librix Research Group',
-        filename: 'Decentralized_RAG_Architecture.md',
-        format: 'markdown',
-        mimeType: 'text/markdown',
-        size: 142000,
-        hash: 'f00a77b',
-        storageProvider: 'terabox',
-        storagePath: 'TeraBox://Research & AI/RAG & Knowledge Graphs/Decentralized_RAG_Architecture.md',
-        folderId: 'fld-rag',
-        isFavorite: true,
-        isTrash: false,
-        tags: ['AI-Agents', 'Architecture', 'Privacy'],
-        collections: ['col-2'],
-        readingProgress: { percentage: 90, currentLocation: 'section-5', updatedAt: Date.now() - 14400000 },
-        contentSnippet: 'Privacy-preserving Retrieval-Augmented Generation requires local vector embeddings and chunk-level similarity scoring without broadcasting sensitive vaults to public clouds.',
-        createdAt: Date.now() - 86400000 * 7,
-        modifiedAt: Date.now() - 14400000,
-        lastOpenedAt: Date.now() - 14400000,
-      }
-    ];
-    docs.forEach(d => this.documents.set(d.id, d));
-
-    // Seed Notes (Obsidian-Style Knowledge Management)
-    const notes: Note[] = [
-      {
-        id: 'note-1',
-        title: 'Universal Storage Architecture',
-        slug: 'universal-storage-architecture',
-        folderId: 'fld-arch',
-        content: `# Universal Storage Architecture\n\nLibrix implements a high-performance, decoupled storage provider abstraction that bridges [[Local Storage]], [[Google Drive]], [[MEGA]], [[TeraBox]], and [[Telegram Storage]].\n\n## Key Architectural Tenets\n- **Zero Single-Platform Assumption**: Works equally well on Linux, Windows, macOS, Android SAF, and iOS Files.\n- **Unified Library Concept**: The user views documents seamlessly regardless of whether they reside in local flash or remote cloud buckets.\n- **Offline First**: All metadata, notes, and cached books remain instantly queryable via [[SQLite Universal Engine]].\n\n#Architecture #Privacy`,
-        frontmatter: {
-          title: 'Universal Storage Architecture',
-          tags: ['Architecture', 'Privacy'],
-          status: 'verified',
-          created: '2026-08-20',
-        },
-        tags: ['Architecture', 'Privacy'],
-        wikilinks: ['Local Storage', 'Google Drive', 'MEGA', 'TeraBox', 'Telegram Storage', 'SQLite Universal Engine'],
-        backlinks: ['note-2', 'note-3'],
-        createdAt: Date.now() - 86400000 * 4,
-        modifiedAt: Date.now() - 3600000 * 2,
-      },
-      {
-        id: 'note-2',
-        title: 'Libris AI & Document RAG',
-        slug: 'libris-ai-and-document-rag',
-        folderId: 'fld-rag',
-        content: `# Libris AI & Document RAG\n\nLibris is the private, intelligent knowledge companion in Librix. Built to interact with books, papers, and personal notes without violating data privacy.\n\n## Core Capabilities\n- **Local AI Provider**: Native integration with [[Ollama]] and [[LM Studio]] running locally.\n- **Document-Aware RAG**: Paragraph-level chunking with TF-IDF and vector cosine similarity search.\n- **Source Citations**: Every answer directly links back to the exact page or CFI location in the document.\n\nSee also: [[Universal Storage Architecture]] and [[Knowledge Graph Physics]].\n\n#AI-Agents #Privacy`,
-        frontmatter: {
-          title: 'Libris AI & Document RAG',
-          tags: ['AI-Agents', 'Privacy'],
-          status: 'in-progress',
-          created: '2026-08-22',
-        },
-        tags: ['AI-Agents', 'Privacy'],
-        wikilinks: ['Ollama', 'LM Studio', 'Universal Storage Architecture', 'Knowledge Graph Physics'],
-        backlinks: ['note-1'],
-        createdAt: Date.now() - 86400000 * 2,
-        modifiedAt: Date.now() - 3600000,
-      },
-      {
-        id: 'note-3',
-        title: 'Knowledge Graph Physics',
-        slug: 'knowledge-graph-physics',
-        folderId: 'fld-rag',
-        content: `# Knowledge Graph Physics\n\nLibrix renders relationships between notes, books, tags, and authors via a high-performance 2D Canvas force-directed simulation.\n\n## Link Types\n1. **Wikilinks**: Explicit bidirectional connections \`[[Target]]\`.\n2. **Tag Clusters**: Implicit semantic grouping via shared \`#tags\`.\n3. **Document Attachments**: Notes citing or summarizing specific books in the library.\n\nConnected to: [[Universal Storage Architecture]] and [[Libris AI & Document RAG]].\n\n#Graph #KnowledgeManagement`,
-        frontmatter: {
-          title: 'Knowledge Graph Physics',
-          tags: ['Graph', 'KnowledgeManagement'],
-          status: 'verified',
-          created: '2026-08-23',
-        },
-        tags: ['Graph', 'KnowledgeManagement'],
-        wikilinks: ['Universal Storage Architecture', 'Libris AI & Document RAG'],
-        backlinks: ['note-2'],
-        createdAt: Date.now() - 86400000,
-        modifiedAt: Date.now() - 1800000,
-      }
-    ];
-    notes.forEach(n => this.notes.set(n.id, n));
-
+    // Zero demo documents, books, or notes. Clean workstation vault.
+    
     // Seed Custom AI Providers (Generic Architecture)
-    const initialAIProviders: CustomAIProviderConfig[] = [
-      {
-        id: 'ai-local-ollama',
-        name: 'Local Ollama',
-        baseUrl: 'http://localhost:11434',
-        modelName: 'llama3:latest',
-        isLocal: true,
-        isDefault: true,
-        temperature: 0.7,
-        maxTokens: 1024,
-      },
-      {
-        id: 'ai-local-lmstudio',
-        name: 'LM Studio / llama.cpp',
-        baseUrl: 'http://localhost:1234/v1',
-        modelName: 'local-model',
-        isLocal: true,
-        isDefault: false,
-        temperature: 0.7,
-        maxTokens: 1024,
-      },
-      {
-        id: 'ai-custom-remote',
-        name: 'Custom Research Server',
-        baseUrl: 'https://ai.example.com/v1',
-        modelName: 'deepseek-r1-70b',
-        isLocal: false,
-        isDefault: false,
-        temperature: 0.6,
-        maxTokens: 2048,
-      },
-    ];
-    initialAIProviders.forEach(p => this.aiProviders.set(p.id, p));
+    if (this.aiProviders.size === 0) {
+      const initialAIProviders: CustomAIProviderConfig[] = [
+        {
+          id: 'ai-local-ollama',
+          name: 'Local Ollama',
+          baseUrl: 'http://localhost:11434',
+          modelName: 'llama3:latest',
+          isLocal: true,
+          isDefault: true,
+          temperature: 0.7,
+          maxTokens: 1024,
+        },
+        {
+          id: 'ai-local-lmstudio',
+          name: 'LM Studio / llama.cpp',
+          baseUrl: 'http://localhost:1234/v1',
+          modelName: 'local-model',
+          isLocal: true,
+          isDefault: false,
+          temperature: 0.7,
+          maxTokens: 1024,
+        },
+      ];
+      initialAIProviders.forEach(p => this.aiProviders.set(p.id, p));
+    }
 
-    // Seed Initial Annotations (Persistent Multi-Highlighting)
-    const initialAnnots: Annotation[] = [
-      {
-        id: 'annot-1',
-        documentId: 'doc-1',
-        location: 'chapter-4',
-        selectedText: 'Memory safety without garbage collection is its signature achievement.',
-        note: 'Key insight for low-overhead cross-platform workers.',
-        style: 'box',
-        createdAt: Date.now() - 86400000,
-        updatedAt: Date.now() - 86400000,
-      },
-      {
-        id: 'annot-2',
-        documentId: 'doc-2',
-        location: 'page-214',
-        selectedText: 'Data systems are at the heart of modern software.',
-        note: 'Foundation of Librix multi-cloud metadata engine.',
-        style: 'underline',
-        createdAt: Date.now() - 3600000 * 5,
-        updatedAt: Date.now() - 3600000 * 5,
-      },
-    ];
-    initialAnnots.forEach(a => this.annotations.set(a.id, a));
-
-    // Seed Cloud Connections
-    const clouds: CloudConnection[] = [
-      { id: 'cloud-1', providerId: 'local', providerType: 'local', name: 'Local Workstation Flash', status: 'connected', quotaTotal: 512000000000, quotaUsed: 84000000000, isDefault: true, config: { path: '/home/librix/library' } },
-      { id: 'cloud-2', providerId: 'gdrive-main', providerType: 'gdrive', name: 'Google Drive Sync', accountEmail: 'operator@librix.terminal', status: 'connected', quotaTotal: 15000000000, quotaUsed: 6200000000, isDefault: false, config: {} },
-      { id: 'cloud-3', providerId: 'telegram-vault', providerType: 'telegram', name: 'Telegram Document Stream', accountEmail: '@librix_research_vault', status: 'connected', quotaTotal: 0, quotaUsed: 430000000, isDefault: false, config: { channelId: '-1004928192' } },
-      { id: 'cloud-4', providerId: 'mega-store', providerType: 'mega', name: 'MEGA Encrypted Vault', accountEmail: 'archive@librix.terminal', status: 'connected', quotaTotal: 20000000000, quotaUsed: 3800000000, isDefault: false, config: {} },
-    ];
-    clouds.forEach(c => this.cloudConnections.set(c.id, c));
+    // Seed Default Local Storage Provider
+    if (this.cloudConnections.size === 0) {
+      const clouds: CloudConnection[] = [
+        {
+          id: 'cloud-local-1',
+          providerId: 'local',
+          providerType: 'local',
+          name: 'Local Workstation Flash',
+          status: 'connected',
+          quotaTotal: 0,
+          quotaUsed: 0,
+          isDefault: true,
+          config: { path: '/librix_vault' },
+        },
+      ];
+      clouds.forEach(c => this.cloudConnections.set(c.id, c));
+    }
 
     this.saveToStorage();
   }

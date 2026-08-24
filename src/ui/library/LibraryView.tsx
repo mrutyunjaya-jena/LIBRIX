@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus,
   LayoutGrid,
@@ -18,6 +18,10 @@ import { DocumentCard } from './DocumentCard';
 import { FolderTree } from './FolderTree';
 import { ContextMenu, ContextMenuState } from './ContextMenu';
 import { usePlatform } from '../../platform/PlatformContext';
+import { fileBinaryStore } from '../../core/storage/FileBinaryStore';
+import { db } from '../../core/db/DatabaseEngine';
+import { EpubParser } from '../../readers/parsers/EpubParser';
+import { PdfParser } from '../../readers/parsers/PdfParser';
 
 interface LibraryViewProps {
   documents: Document[];
@@ -35,6 +39,7 @@ interface LibraryViewProps {
   onRenameDocument: (docId: string, newTitle: string, newFilename?: string) => void;
   onMoveDocumentToFolder: (docId: string, folderId: string | null) => void;
   onDuplicateDocument: (docId: string) => void;
+  onDocumentsUpdated?: () => void;
   activeCollectionTitle?: string;
 }
 
@@ -54,6 +59,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   onRenameDocument,
   onMoveDocumentToFolder,
   onDuplicateDocument,
+  onDocumentsUpdated,
   activeCollectionTitle,
 }) => {
   const platform = usePlatform();
@@ -82,6 +88,50 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
   const [moveDocTarget, setMoveDocTarget] = useState<Document | null>(null);
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
+
+  // Retroactively generate cover thumbnails for existing documents without covers
+  useEffect(() => {
+    let isCancelled = false;
+
+    const generateMissingThumbnails = async () => {
+      const docsNeedingCovers = documents.filter(
+        d => !d.coverImage && (d.format === 'pdf' || d.format === 'epub')
+      );
+      if (docsNeedingCovers.length === 0) return;
+
+      for (const doc of docsNeedingCovers) {
+        if (isCancelled) break;
+        try {
+          const bytes = await fileBinaryStore.getFileBytes(doc.id);
+          if (!bytes || bytes.length === 0) continue;
+
+          let cover: string | undefined = undefined;
+          if (doc.format === 'pdf') {
+            cover = await PdfParser.generateThumbnail(bytes);
+          } else if (doc.format === 'epub') {
+            const parsed = await EpubParser.parse(bytes);
+            cover = parsed.coverDataUrl;
+          }
+
+          if (cover && !isCancelled) {
+            const updatedDoc: Document = { ...doc, coverImage: cover };
+            await db.saveDocument(updatedDoc);
+            if (onDocumentsUpdated) {
+              onDocumentsUpdated();
+            }
+          }
+        } catch {
+          // ignore corrupted files
+        }
+      }
+    };
+
+    generateMissingThumbnails();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [documents.length, onDocumentsUpdated]);
 
   // Filter Documents by Active Folder & Filters
   let filtered = documents.filter(doc => !doc.isTrash);
@@ -133,6 +183,116 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const breadcrumbs = getBreadcrumbTrail();
   const currentFolder = folders.find(f => f.id === selectedFolderId);
 
+  const processImportedFiles = async (
+    files: Array<{ name: string; data?: Uint8Array }>
+  ) => {
+    const imported: Partial<Document>[] = [];
+
+    const FORMAT_BY_EXT: Record<string, DocumentFormat> = {
+      pdf: 'pdf',
+      epub: 'epub',
+      md: 'markdown',
+      markdown: 'markdown',
+      txt: 'txt',
+      mobi: 'mobi',
+      azw3: 'azw3',
+      cbz: 'cbz',
+      cbr: 'cbr',
+      docx: 'docx',
+      json: 'json',
+      csv: 'csv',
+      yaml: 'yaml',
+      yml: 'yaml',
+    };
+
+    const MIME_BY_FORMAT: Partial<Record<DocumentFormat, string>> = {
+      pdf: 'application/pdf',
+      epub: 'application/epub+zip',
+      markdown: 'text/markdown',
+      txt: 'text/plain',
+      mobi: 'application/x-mobipocket-ebook',
+      azw3: 'application/vnd.amazon.ebook',
+      cbz: 'application/vnd.comicbook+zip',
+      cbr: 'application/vnd.comicbook-rar',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      json: 'application/json',
+      csv: 'text/csv',
+      yaml: 'text/yaml',
+    };
+
+    for (const p of files) {
+      const ext = p.name.split('.').pop()?.toLowerCase() || 'unknown';
+      const docId = `doc_import_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const format: DocumentFormat = FORMAT_BY_EXT[ext] || 'unknown';
+      const mimeType = MIME_BY_FORMAT[format] || 'application/octet-stream';
+
+      let docTitle = p.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' ');
+      let docAuthor = 'Imported Author';
+      let snippet = `Imported document ${p.name}.`;
+      let coverImage: string | undefined = undefined;
+
+      if (p.data && p.data.length > 0) {
+        // 1. Save raw binary payload into IndexedDB
+        await fileBinaryStore.saveFileBlob(docId, p.data, mimeType, p.name);
+
+        // 2. Parse EPUB/PDF metadata and cover
+        if (format === 'epub') {
+          try {
+            const parsed = await EpubParser.parse(p.data);
+            if (parsed.title && parsed.title !== 'Imported Document') docTitle = parsed.title;
+            if (parsed.author && parsed.author !== 'Unknown Author') docAuthor = parsed.author;
+            if (parsed.coverDataUrl) coverImage = parsed.coverDataUrl;
+            if (parsed.chapters[0]?.content) {
+              snippet = parsed.chapters[0].content.replace(/<[^>]+>/g, '').slice(0, 500);
+            }
+          } catch (e) {
+            // fallback
+          }
+        } else if (format === 'pdf') {
+          try {
+            const thumb = await PdfParser.generateThumbnail(p.data);
+            if (thumb) coverImage = thumb;
+          } catch (e) {
+            // fallback
+          }
+        } else if (format === 'markdown' || format === 'txt' || format === 'csv') {
+          try {
+            const decoded = new TextDecoder('utf-8').decode(p.data);
+            snippet = decoded.slice(0, 10000);
+          } catch (e) {
+            // fallback
+          }
+        }
+      }
+
+      imported.push({
+        id: docId,
+        title: docTitle,
+        author: docAuthor,
+        filename: p.name,
+        format,
+        mimeType,
+        size: p.data?.length || 1024000,
+        hash: 'hash_' + Date.now(),
+        storageProvider: 'local' as StorageProviderType,
+        storagePath: selectedFolderId ? `/library/${selectedFolderId}/${p.name}` : `/library/${p.name}`,
+        folderId: selectedFolderId,
+        isFavorite: false,
+        isTrash: false,
+        tags: ['Imported', format.toUpperCase()],
+        collections: [],
+        coverImage,
+        contentSnippet: snippet,
+        createdAt: Date.now(),
+        modifiedAt: Date.now(),
+      });
+    }
+
+    if (imported.length > 0) {
+      onImportDocuments(imported);
+    }
+  };
+
   const handlePickAndImport = async () => {
     const picked = await platform.filePicker.pickDocument(
       [{ name: 'Ebooks & Documents', extensions: ['epub', 'pdf', 'md', 'txt', 'mobi', 'cbz'] }],
@@ -140,30 +300,30 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     );
 
     if (picked.length > 0) {
-      const imported: Partial<Document>[] = picked.map(p => {
-        const ext = p.name.split('.').pop()?.toLowerCase() || 'unknown';
-        return {
-          id: `doc_import_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          title: p.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' '),
-          author: 'Unknown Author',
-          filename: p.name,
-          format: (['epub', 'pdf', 'markdown', 'txt'].includes(ext) ? ext : 'epub') as DocumentFormat,
-          mimeType: ext === 'pdf' ? 'application/pdf' : 'application/epub+zip',
-          size: p.data?.length || 1024000,
-          hash: 'hash_' + Date.now(),
-          storageProvider: 'local' as StorageProviderType,
-          storagePath: selectedFolderId ? `/library/${selectedFolderId}/${p.name}` : `/library/${p.name}`,
-          folderId: selectedFolderId,
-          isFavorite: false,
-          isTrash: false,
-          tags: ['Imported'],
-          collections: [],
-          contentSnippet: `Imported document ${p.name}. Ready for offline reading and local RAG.`,
-          createdAt: Date.now(),
-          modifiedAt: Date.now(),
-        };
-      });
-      onImportDocuments(imported);
+      await processImportedFiles(picked);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  };
+
+  const handleDropFiles = async (e: React.DragEvent) => {
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      e.preventDefault();
+      const filesList = [];
+      for (let i = 0; i < e.dataTransfer.files.length; i++) {
+        const file = e.dataTransfer.files[i];
+        const buffer = await file.arrayBuffer();
+        filesList.push({
+          name: file.name,
+          data: new Uint8Array(buffer),
+        });
+      }
+      await processImportedFiles(filesList);
     }
   };
 
@@ -225,8 +385,12 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         </aside>
       )}
 
-      {/* 2. Main Content & File Grid */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* 2. Main Content & File Grid (Supports Drag & Drop of real files) */}
+      <div
+        onDragOver={handleDragOver}
+        onDrop={handleDropFiles}
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}
+      >
         {/* Header & Controls Toolbar */}
         <div
           style={{

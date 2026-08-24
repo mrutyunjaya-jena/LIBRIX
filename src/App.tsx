@@ -1,5 +1,6 @@
 import React from 'react';
 import { PlatformProvider } from './platform/PlatformContext';
+import { ErrorBoundary } from './ui/layout/ErrorBoundary';
 import { AppShell } from './ui/layout/AppShell';
 import './styles/tokens.css';
 import './styles/base.css';
@@ -8,9 +9,11 @@ import './styles/reader.css';
 
 export function App() {
   return (
-    <PlatformProvider>
-      <AppShell />
-    </PlatformProvider>
+    <ErrorBoundary>
+      <PlatformProvider>
+        <AppShell />
+      </PlatformProvider>
+    </ErrorBoundary>
   );
 }
 
