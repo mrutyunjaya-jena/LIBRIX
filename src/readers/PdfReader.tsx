@@ -25,6 +25,8 @@ import {
   Type,
   AlignLeft,
   AlignJustify,
+  Hand,
+  MousePointer,
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { IReaderProps } from './ReaderInterface';
@@ -50,16 +52,19 @@ export const PdfReader: React.FC<IReaderProps> = ({
     return 1;
   };
 
-  const [currentPage, setCurrentPage] = useState<number>(() => getInitialPage(document));
-  const [totalPages, setTotalPages] = useState(1);
+  const [pdfDocProxy, setPdfDocProxy] = useState<any>(null);
   const [pages, setPages] = useState<ParsedPdfPage[]>([]);
   const [pageTextMap, setPageTextMap] = useState<Record<number, string>>({});
-  const [pdfDocProxy, setPdfDocProxy] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(() => getInitialPage(document));
+  const [totalPages, setTotalPages] = useState<number>(0);
   const [isLoadingPdf, setIsLoadingPdf] = useState(true);
   const [isRenderingPage, setIsRenderingPage] = useState(false);
 
   const [zoom, setZoom] = useState(100);
+  const [visualScale, setVisualScale] = useState(1);
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [rotation, setRotation] = useState(0);
+  const [toolMode, setToolMode] = useState<'pan' | 'select'>('pan');
   const [showThumbnails, setShowThumbnails] = useState(false);
   const [showAnnotations, setShowAnnotations] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -84,6 +89,121 @@ export const PdfReader: React.FC<IReaderProps> = ({
   const stageRef = useRef<HTMLDivElement>(null);
   const selectedTextRef = useRef<string>('');
   const renderTaskRef = useRef<any>(null);
+  const isDraggingRef = useRef<boolean>(false);
+  const dragStartRef = useRef<{ clientX: number; clientY: number; startPanX: number; startPanY: number } | null>(null);
+  const touchStartDistRef = useRef<number | null>(null);
+  const initialZoomRef = useRef<number>(100);
+  const visualScaleRef = useRef<number>(1);
+
+  // Mouse Drag / Pan Handlers for Desktop & Trackpad (Free 2D GPU translation)
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (toolMode === 'pan' || e.button === 1 || e.altKey) {
+      isDraggingRef.current = true;
+      dragStartRef.current = {
+        clientX: e.clientX,
+        clientY: e.clientY,
+        startPanX: panOffset.x,
+        startPanY: panOffset.y,
+      };
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDraggingRef.current && dragStartRef.current) {
+      const deltaX = e.clientX - dragStartRef.current.clientX;
+      const deltaY = e.clientY - dragStartRef.current.clientY;
+      setPanOffset({
+        x: Math.round(dragStartRef.current.startPanX + deltaX),
+        y: Math.round(dragStartRef.current.startPanY + deltaY),
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    isDraggingRef.current = false;
+    dragStartRef.current = null;
+  };
+
+  // Touch Handlers for Finger Drag & Pinch Zoom on Android
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      // 2-finger pinch zoom gesture
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      touchStartDistRef.current = dist;
+      initialZoomRef.current = zoom;
+      visualScaleRef.current = 1;
+      dragStartRef.current = null;
+    } else if (e.touches.length === 1) {
+      isDraggingRef.current = true;
+      dragStartRef.current = {
+        clientX: e.touches[0].clientX,
+        clientY: e.touches[0].clientY,
+        startPanX: panOffset.x,
+        startPanY: panOffset.y,
+      };
+      touchStartDistRef.current = null;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && touchStartDistRef.current !== null) {
+      // 2-Finger Real-time Visual Pinch Zoom (60fps GPU transform)
+      e.preventDefault();
+      const currentDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const scale = Math.min(3.5, Math.max(0.4, currentDist / touchStartDistRef.current));
+      visualScaleRef.current = scale;
+      setVisualScale(scale);
+    } else if (e.touches.length === 1 && dragStartRef.current && toolMode === 'pan') {
+      // Free 1-Finger 2D Drag Panning
+      const deltaX = e.touches[0].clientX - dragStartRef.current.clientX;
+      const deltaY = e.touches[0].clientY - dragStartRef.current.clientY;
+      setPanOffset({
+        x: Math.round(dragStartRef.current.startPanX + deltaX),
+        y: Math.round(dragStartRef.current.startPanY + deltaY),
+      });
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (visualScaleRef.current !== 1) {
+      const finalZoom = Math.min(300, Math.max(50, Math.round(initialZoomRef.current * visualScaleRef.current)));
+      visualScaleRef.current = 1;
+      setVisualScale(1);
+      setZoom(finalZoom);
+    }
+
+    if (dragStartRef.current && e.changedTouches.length > 0) {
+      const deltaX = e.changedTouches[0].clientX - dragStartRef.current.clientX;
+      const deltaY = e.changedTouches[0].clientY - dragStartRef.current.clientY;
+
+      // If user only swiped horizontally with no zoom & pan at origin, turn page
+      if (toolMode === 'pan' && zoom <= 100 && Math.abs(panOffset.x) < 40 && Math.abs(deltaX) > 75 && Math.abs(deltaX) > Math.abs(deltaY) * 2) {
+        if (deltaX < 0) {
+          setCurrentPage(p => Math.min(totalPages, p + 1));
+        } else {
+          setCurrentPage(p => Math.max(1, p - 1));
+        }
+        setPanOffset({ x: 0, y: 0 });
+      }
+    }
+
+    isDraggingRef.current = false;
+    dragStartRef.current = null;
+    touchStartDistRef.current = null;
+  };
+
+  const handleDoubleClick = () => {
+    // Reset view to origin on double click / tap
+    setPanOffset({ x: 0, y: 0 });
+    setZoom(100);
+    setVisualScale(1);
+  };
 
   // Helper to paginate long text if no binary exists
   const splitTextIntoPages = (fullText: string, pageSize = 2000): ParsedPdfPage[] => {
@@ -269,7 +389,15 @@ export const PdfReader: React.FC<IReaderProps> = ({
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const baseScale = (zoom / 100) * 1.35;
+        // Calculate auto-fit scale so PDF pages never overflow horizontally on Android/Tablet
+        const stageEl = stageRef.current;
+        const availableWidth = stageEl ? Math.max(280, stageEl.clientWidth - 16) : (typeof window !== 'undefined' ? window.innerWidth - 16 : 600);
+        const unscaledViewport = page.getViewport({ scale: 1.0, rotation });
+        let fitScale = 1.35;
+        if (unscaledViewport.width > 0 && availableWidth < unscaledViewport.width * 1.35) {
+          fitScale = availableWidth / unscaledViewport.width;
+        }
+        const baseScale = (zoom / 100) * fitScale;
         const dpr = window.devicePixelRatio || 1;
         const viewport = page.getViewport({ scale: baseScale, rotation });
 
@@ -345,7 +473,7 @@ export const PdfReader: React.FC<IReaderProps> = ({
     };
   }, [pdfDocProxy, currentPage, zoom, rotation, viewMode]);
 
-  // Text Selection Listener with Safe Boundary Clamping
+  // Text Selection Listener with Dynamic Boundary Clamping
   const checkSelection = useCallback(() => {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
@@ -361,11 +489,23 @@ export const PdfReader: React.FC<IReaderProps> = ({
         const range = sel.getRangeAt(0);
         const rect = range.getBoundingClientRect();
         if (rect.width > 0 && rect.height > 0) {
-          const clampedX = Math.max(160, Math.min(window.innerWidth - 160, rect.left + rect.width / 2));
-          const clampedY = rect.top < 85 ? Math.min(window.innerHeight - 60, rect.bottom + 12) : rect.top - 50;
+          const viewportW = window.innerWidth;
+          const viewportH = window.innerHeight;
+          const toolbarWidth = Math.min(viewportW - 24, 340);
+          const halfToolbar = toolbarWidth / 2;
+
+          const rawX = rect.left + rect.width / 2;
+          const clampedX = Math.max(halfToolbar + 10, Math.min(viewportW - halfToolbar - 10, rawX));
+
+          // Prefer placing above selection; if too close to top bar (< 70px), place below selection
+          let clampedY = rect.top - 54;
+          if (clampedY < 64) {
+            clampedY = Math.min(viewportH - 120, rect.bottom + 12);
+          }
+
           setSelectionPos({
-            x: clampedX,
-            y: clampedY,
+            x: Math.round(clampedX),
+            y: Math.round(clampedY),
           });
         }
       } catch (e) {
@@ -524,9 +664,20 @@ export const PdfReader: React.FC<IReaderProps> = ({
         try {
           const regex = new RegExp(`(${pattern})`, 'gi');
           const isActive = activeHighlightId === a.id;
+          const colorClass =
+            a.style === 'underline'
+              ? 'color-green'
+              : a.style === 'comment'
+              ? 'color-purple'
+              : a.style === 'box'
+              ? 'color-blue'
+              : a.style === 'filled'
+              ? 'color-red'
+              : 'color-yellow';
+
           rendered = rendered.replace(
             regex,
-            `<mark class="scifi-highlight ${isActive ? 'active' : ''}" data-annot-id="${a.id}" title="${a.note ? 'Note: ' + a.note : 'Highlight (Click to view note)'}">$1</mark>`
+            `<mark class="scifi-highlight ${colorClass} ${isActive ? 'active' : ''}" data-annot-id="${a.id}" title="${a.note ? 'Note: ' + a.note : 'Highlight (Click to view note)'}">$1</mark>`
           );
         } catch (e) {
           // fallback
@@ -595,17 +746,45 @@ export const PdfReader: React.FC<IReaderProps> = ({
             gap: 4,
           }}
         >
+          {/* Color Highlight Presets */}
           <button
-            className="btn btn-sm btn-primary"
-            onMouseDown={e => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onClick={() => createHighlight('box')}
-            title="Highlight Selected Text"
+            className="btn btn-sm btn-ghost"
+            style={{ padding: '3px 6px', background: 'rgba(234, 179, 8, 0.25)', border: '1px solid #eab308' }}
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+            onClick={() => createHighlight('highlight')}
+            title="Yellow Highlight"
           >
-            <Highlighter size={13} />
-            <span>Highlight</span>
+            🟡
+          </button>
+
+          <button
+            className="btn btn-sm btn-ghost"
+            style={{ padding: '3px 6px', background: 'rgba(34, 197, 94, 0.25)', border: '1px solid #22c55e' }}
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+            onClick={() => createHighlight('underline')}
+            title="Green Highlight"
+          >
+            🟢
+          </button>
+
+          <button
+            className="btn btn-sm btn-ghost"
+            style={{ padding: '3px 6px', background: 'rgba(59, 130, 246, 0.25)', border: '1px solid #3b82f6' }}
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+            onClick={() => createHighlight('box')}
+            title="Blue Highlight"
+          >
+            🔵
+          </button>
+
+          <button
+            className="btn btn-sm btn-ghost"
+            style={{ padding: '3px 6px', background: 'rgba(168, 85, 247, 0.25)', border: '1px solid #a855f7' }}
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+            onClick={() => createHighlight('comment')}
+            title="Purple Highlight"
+          >
+            🟣
           </button>
 
           <button
@@ -617,7 +796,7 @@ export const PdfReader: React.FC<IReaderProps> = ({
             onClick={() => {
               const note = prompt('Add note to highlight:');
               if (note !== null) {
-                createHighlight('box', note);
+                createHighlight('highlight', note);
               }
             }}
             title="Add Note to Highlight"
@@ -677,10 +856,10 @@ export const PdfReader: React.FC<IReaderProps> = ({
           </div>
         </div>
 
-        {/* View Mode & Zoom */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+        {/* View Mode & Zoom - Desktop Only */}
+        <div className="reader-desktop-only-control" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
           {/* Custom Native Canvas / Text Mode Toggle */}
-          <div style={{ display: 'flex', background: 'var(--bg-input)', padding: 2, borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-medium)', marginRight: 6 }}>
+          <div style={{ display: 'flex', background: 'var(--bg-input)', padding: 2, borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-medium)', marginRight: 4 }}>
             <button
               className={`btn btn-sm ${viewMode === 'canvas' ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setViewMode('canvas')}
@@ -696,6 +875,28 @@ export const PdfReader: React.FC<IReaderProps> = ({
               style={{ padding: '2px 8px', fontSize: 'var(--text-2xs)' }}
             >
               Text & Highlights
+            </button>
+          </div>
+
+          {/* Tool Mode: Pan vs Select */}
+          <div style={{ display: 'flex', background: 'var(--bg-input)', padding: 2, borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-medium)', marginRight: 6 }}>
+            <button
+              className={`btn btn-sm ${toolMode === 'pan' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setToolMode('pan')}
+              title="Move & Drag Tool (Free Panning)"
+              style={{ padding: '2px 8px', fontSize: 'var(--text-2xs)', gap: 4 }}
+            >
+              <Hand size={12} />
+              <span>Move</span>
+            </button>
+            <button
+              className={`btn btn-sm ${toolMode === 'select' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setToolMode('select')}
+              title="Text Select & Highlight Tool"
+              style={{ padding: '2px 8px', fontSize: 'var(--text-2xs)', gap: 4 }}
+            >
+              <MousePointer size={12} />
+              <span>Highlight</span>
             </button>
           </div>
 
@@ -763,9 +964,9 @@ export const PdfReader: React.FC<IReaderProps> = ({
           </button>
 
           {onOpenLibris && (
-            <button className="btn btn-sm btn-primary" onClick={() => onOpenLibris()}>
+            <button className="btn btn-sm btn-primary" onClick={() => onOpenLibris()} title="Libris AI">
               <Sparkles size={13} />
-              <span>Libris AI</span>
+              <span className="hide-on-mobile-xs">Libris AI</span>
             </button>
           )}
         </div>
@@ -813,11 +1014,32 @@ export const PdfReader: React.FC<IReaderProps> = ({
           </aside>
         )}
 
+        {(showThumbnails || showAnnotations || showSettings) && (
+          <div
+            className="mobile-drawer-backdrop"
+            onClick={() => {
+              setShowThumbnails(false);
+              setShowAnnotations(false);
+              setShowSettings(false);
+            }}
+          />
+        )}
+
         {/* PDF Page Stage */}
         <main
           className="reader-stage selectable"
           ref={stageRef}
           onClick={handleStageClick}
+          onDoubleClick={handleDoubleClick}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          style={{
+            cursor: toolMode === 'pan' ? (isDraggingRef.current ? 'grabbing' : 'grab') : 'text',
+          }}
         >
           {isLoadingPdf ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 8, color: 'var(--text-muted)', margin: 'auto' }}>
@@ -828,7 +1050,14 @@ export const PdfReader: React.FC<IReaderProps> = ({
             </div>
           ) : viewMode === 'canvas' ? (
             /* Mode 1: Native Canvas Render with Interactive TextLayer & Highlighting Overlay */
-            <div className="pdf-page-wrapper">
+            <div
+              className="pdf-page-wrapper"
+              style={{
+                transform: `translate3d(${panOffset.x}px, ${panOffset.y}px, 0) scale(${visualScale})`,
+                transformOrigin: 'center top',
+                transition: isDraggingRef.current ? 'none' : 'transform 0.1s ease-out',
+              }}
+            >
               <div
                 className="pdf-page-viewport"
                 style={{
@@ -847,6 +1076,9 @@ export const PdfReader: React.FC<IReaderProps> = ({
                 <div
                   ref={textLayerRef}
                   className="textLayer"
+                  style={{
+                    pointerEvents: toolMode === 'select' ? 'auto' : 'none',
+                  }}
                 />
               </div>
 
@@ -1126,39 +1358,161 @@ export const PdfReader: React.FC<IReaderProps> = ({
         )}
       </div>
 
-      {/* PDF Footer Navigation Bar */}
+      {/* PDF Bottom Navigation Bar & Dock */}
       <footer className="reader-footer">
-        <button
-          className="btn btn-sm btn-ghost"
-          disabled={currentPage <= 1}
-          onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-        >
-          <ChevronLeft size={14} />
-          <span>PREV</span>
-        </button>
+        {/* Desktop Footer View */}
+        <div className="reader-desktop-only-footer">
+          <button
+            className="btn btn-sm btn-ghost"
+            disabled={currentPage <= 1}
+            onClick={() => {
+              setCurrentPage(Math.max(1, currentPage - 1));
+              setPanOffset({ x: 0, y: 0 });
+            }}
+          >
+            <ChevronLeft size={14} />
+            <span>PREV</span>
+          </button>
 
-        <div className="reader-progress-slider-wrap">
-          <span>{currentPage}</span>
-          <input
-            type="range"
-            min="1"
-            max={Math.max(1, totalPages)}
-            value={currentPage}
-            onChange={e => setCurrentPage(Number(e.target.value))}
-            className="reader-progress-slider"
-          />
-          <span>{totalPages} PAGES</span>
+          <div className="reader-progress-slider-wrap">
+            <span>{currentPage}</span>
+            <input
+              type="range"
+              min="1"
+              max={Math.max(1, totalPages)}
+              value={currentPage}
+              onChange={e => {
+                setCurrentPage(Number(e.target.value));
+                setPanOffset({ x: 0, y: 0 });
+              }}
+              className="reader-progress-slider"
+            />
+            <span>{totalPages} PAGES</span>
+          </div>
+
+          <button
+            className="btn btn-sm btn-ghost"
+            disabled={currentPage >= totalPages}
+            onClick={() => {
+              setCurrentPage(Math.min(totalPages, currentPage + 1));
+              setPanOffset({ x: 0, y: 0 });
+            }}
+          >
+            <span>NEXT</span>
+            <ChevronRight size={14} />
+          </button>
         </div>
 
-        <button
-          className="btn btn-sm btn-ghost"
-          disabled={currentPage >= totalPages}
-          onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-        >
-          <span>NEXT</span>
-          <ChevronRight size={14} />
-        </button>
+        {/* Mobile & Tablet Sleek Docked Footer View */}
+        <div className="reader-mobile-only-footer">
+          {/* Tool Mode: Pan vs Highlight */}
+          <button
+            className={`btn btn-sm ${toolMode === 'select' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setToolMode(toolMode === 'pan' ? 'select' : 'pan')}
+            title={toolMode === 'pan' ? 'In Move Mode (Tap for Highlight Tool)' : 'In Highlight Mode (Tap for Move Tool)'}
+            style={{ height: 30, padding: '0 6px', fontSize: '0.7rem', gap: 3 }}
+          >
+            {toolMode === 'pan' ? <Hand size={13} /> : <Highlighter size={13} />}
+            <span>{toolMode === 'pan' ? 'Move' : 'Select'}</span>
+          </button>
+
+          {/* Page Step Counter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <button
+              className="btn-icon btn-sm"
+              disabled={currentPage <= 1}
+              onClick={() => {
+                setCurrentPage(p => Math.max(1, p - 1));
+                setPanOffset({ x: 0, y: 0 });
+              }}
+              style={{ width: 28, height: 28 }}
+            >
+              <ChevronLeft size={15} />
+            </button>
+
+            <span style={{ fontFamily: 'var(--font-tech)', fontSize: '0.72rem', fontWeight: 600, padding: '0 2px', minWidth: 46, textAlign: 'center' }}>
+              {currentPage}/{totalPages}
+            </span>
+
+            <button
+              className="btn-icon btn-sm"
+              disabled={currentPage >= totalPages}
+              onClick={() => {
+                setCurrentPage(p => Math.min(totalPages, p + 1));
+                setPanOffset({ x: 0, y: 0 });
+              }}
+              style={{ width: 28, height: 28 }}
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+
+          {/* Mobile Zoom Cluster: [ - ] [ 100% ] [ + ] */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 1, background: 'var(--bg-input)', borderRadius: 'var(--radius-xs)', padding: '2px 3px', border: '1px solid var(--border-subtle)' }}>
+            <button
+              className="btn-icon btn-sm"
+              onClick={() => {
+                setZoom(z => Math.max(50, z - 25));
+                setVisualScale(1);
+              }}
+              title="Zoom Out"
+              style={{ width: 24, height: 24, padding: 0 }}
+            >
+              <ZoomOut size={12} />
+            </button>
+
+            <button
+              className="btn-ghost btn-sm"
+              onClick={() => {
+                setZoom(100);
+                setPanOffset({ x: 0, y: 0 });
+                setVisualScale(1);
+              }}
+              title="Reset Zoom to 100%"
+              style={{ fontFamily: 'var(--font-tech)', fontSize: '0.68rem', fontWeight: 600, padding: '0 4px', height: 22 }}
+            >
+              {zoom}%
+            </button>
+
+            <button
+              className="btn-icon btn-sm"
+              onClick={() => {
+                setZoom(z => Math.min(300, z + 25));
+                setVisualScale(1);
+              }}
+              title="Zoom In"
+              style={{ width: 24, height: 24, padding: 0 }}
+            >
+              <ZoomIn size={12} />
+            </button>
+          </div>
+        </div>
       </footer>
+
+      {/* Realtime Live Zoom HUD (Shows on Zoom / Pinch) */}
+      {visualScale !== 1 && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: 'rgba(0, 0, 0, 0.75)',
+            color: '#ffffff',
+            padding: '8px 16px',
+            borderRadius: '9999px',
+            fontFamily: 'var(--font-tech)',
+            fontSize: '1rem',
+            fontWeight: 700,
+            zIndex: 4000,
+            pointerEvents: 'none',
+            backdropFilter: 'blur(8px)',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+          }}
+        >
+          {Math.round(zoom * visualScale)}%
+        </div>
+      )}
     </div>
   );
 };

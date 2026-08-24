@@ -7,6 +7,7 @@ import {
   Bookmark as BookmarkIcon,
   Highlighter,
   Type,
+  LayoutGrid,
   Sparkles,
   Search,
   Check,
@@ -79,6 +80,65 @@ export const EpubReader: React.FC<IReaderProps> = ({
 
   const contentRef = useRef<HTMLDivElement>(null);
   const selectedTextRef = useRef<string>('');
+  const touchStartXRef = useRef<number | null>(null);
+  const touchStartYRef = useRef<number | null>(null);
+  const touchStartDistRef = useRef<number | null>(null);
+  const initialFontSizeRef = useRef<number>(18);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      // 2-finger pinch font zoom
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      touchStartDistRef.current = dist;
+      initialFontSizeRef.current = settings.fontSize;
+      touchStartXRef.current = null;
+      touchStartYRef.current = null;
+    } else if (e.touches.length === 1) {
+      touchStartXRef.current = e.touches[0].clientX;
+      touchStartYRef.current = e.touches[0].clientY;
+      touchStartDistRef.current = null;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && touchStartDistRef.current !== null) {
+      e.preventDefault();
+      const currentDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const scale = currentDist / touchStartDistRef.current;
+      const targetSize = Math.min(36, Math.max(12, Math.round(initialFontSizeRef.current * scale)));
+      setSettings(s => ({ ...s, fontSize: targetSize }));
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    touchStartDistRef.current = null;
+    if (touchStartXRef.current === null || touchStartYRef.current === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
+    touchStartXRef.current = null;
+    touchStartYRef.current = null;
+
+    // Detect horizontal swipe on mobile/tablet for chapters
+    if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+      if (deltaX < 0) {
+        // Swipe Left -> Next Chapter
+        if (currentChapterIndex < chapters.length - 1) {
+          setCurrentChapterIndex(i => i + 1);
+        }
+      } else {
+        // Swipe Right -> Prev Chapter
+        if (currentChapterIndex > 0) {
+          setCurrentChapterIndex(i => i - 1);
+        }
+      }
+    }
+  };
 
   // Load Book Content (From actual IndexedDB raw binary or document text)
   useEffect(() => {
@@ -441,13 +501,13 @@ export const EpubReader: React.FC<IReaderProps> = ({
 
       {/* Reader Header Bar */}
       <header className="reader-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}>
           <button className="btn-icon btn-sm" onClick={onClose} title="Back to Library">
             <ArrowLeft size={16} />
           </button>
           <div className="reader-title-area">
             <div className="reader-doc-title">{document.title}</div>
-            <div className="reader-chapter-title">{activeChapter?.title || 'Loading...'}</div>
+            <div className="reader-chapter-title">{activeChapter?.title || 'Loading chapter...'}</div>
           </div>
         </div>
 
@@ -504,7 +564,7 @@ export const EpubReader: React.FC<IReaderProps> = ({
               title="Open Libris AI"
             >
               <Sparkles size={13} />
-              <span>Libris AI</span>
+              <span className="hide-on-mobile-xs">Libris AI</span>
             </button>
           )}
         </div>
@@ -512,6 +572,17 @@ export const EpubReader: React.FC<IReaderProps> = ({
 
       {/* Main Viewport */}
       <div className="reader-viewport">
+        {(showToc || showAnnotations || showSettings) && (
+          <div
+            className="mobile-drawer-backdrop"
+            onClick={() => {
+              setShowToc(false);
+              setShowAnnotations(false);
+              setShowSettings(false);
+            }}
+          />
+        )}
+
         {/* Table of Contents Drawer */}
         {showToc && (
           <aside className="reader-sidebar left">
@@ -550,6 +621,9 @@ export const EpubReader: React.FC<IReaderProps> = ({
           className="reader-stage selectable"
           ref={contentRef}
           onClick={handleStageClick}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
           style={{
             fontFamily:
               settings.fontFamily === 'serif'
@@ -573,7 +647,11 @@ export const EpubReader: React.FC<IReaderProps> = ({
             <div
               key={`ch-${currentChapterIndex}`}
               className="reader-content-frame"
-              style={{ maxWidth: `${getMaxWidthPx()}px` }}
+              style={{
+                maxWidth: `${getMaxWidthPx()}px`,
+                fontSize: `${settings.fontSize}px`,
+                lineHeight: settings.lineHeight,
+              }}
               dangerouslySetInnerHTML={{ __html: renderHighlightedChapterHtml() }}
             />
           )}
@@ -713,19 +791,58 @@ export const EpubReader: React.FC<IReaderProps> = ({
                 </div>
               </div>
 
-              {/* Font Size Slider */}
+              {/* Font Size Slider & Presets */}
               <div className="form-group">
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span className="form-label">Font Size</span>
-                  <span className="form-label">{settings.fontSize}px</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button
+                      className="btn-icon btn-sm"
+                      onClick={() => setSettings(s => ({ ...s, fontSize: Math.max(10, s.fontSize - 1) }))}
+                      title="Decrease Font Size"
+                      style={{ padding: '2px 6px', fontSize: '0.75rem', fontWeight: 700 }}
+                    >
+                      A-
+                    </button>
+                    <span className="form-label" style={{ minWidth: 32, textAlign: 'center' }}>{settings.fontSize}px</span>
+                    <button
+                      className="btn-icon btn-sm"
+                      onClick={() => setSettings(s => ({ ...s, fontSize: Math.min(38, s.fontSize + 1) }))}
+                      title="Increase Font Size"
+                      style={{ padding: '2px 6px', fontSize: '0.75rem', fontWeight: 700 }}
+                    >
+                      A+
+                    </button>
+                  </div>
                 </div>
+
                 <input
                   type="range"
-                  min="13"
-                  max="30"
+                  min="10"
+                  max="38"
                   value={settings.fontSize}
                   onChange={e => setSettings({ ...settings, fontSize: Number(e.target.value) })}
                 />
+
+                {/* Quick Presets */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 3, marginTop: 4 }}>
+                  {[
+                    { label: 'Tiny', size: 11 },
+                    { label: 'Small', size: 14 },
+                    { label: 'Med', size: 17 },
+                    { label: 'Large', size: 22 },
+                    { label: 'XL', size: 28 },
+                  ].map(p => (
+                    <button
+                      key={p.size}
+                      className={`btn btn-sm ${settings.fontSize === p.size ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ fontSize: '0.62rem', padding: '3px 2px' }}
+                      onClick={() => setSettings({ ...settings, fontSize: p.size })}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Line Height */}
@@ -748,38 +865,98 @@ export const EpubReader: React.FC<IReaderProps> = ({
         )}
       </div>
 
-      {/* Reader Footer Navigation */}
+      {/* Reader Bottom Navigation Bar & Dock */}
       <footer className="reader-footer">
-        <button
-          className="btn btn-sm btn-ghost"
-          disabled={currentChapterIndex === 0}
-          onClick={() => setCurrentChapterIndex(Math.max(0, currentChapterIndex - 1))}
-        >
-          <ChevronLeft size={14} />
-          <span>PREV</span>
-        </button>
+        {/* Desktop Footer View */}
+        <div className="reader-desktop-only-footer">
+          <button
+            className="btn btn-sm btn-ghost"
+            disabled={currentChapterIndex === 0}
+            onClick={() => setCurrentChapterIndex(Math.max(0, currentChapterIndex - 1))}
+          >
+            <ChevronLeft size={14} />
+            <span>PREV</span>
+          </button>
 
-        <div className="reader-progress-slider-wrap">
-          <span>{Math.round(((currentChapterIndex + 1) / Math.max(1, chapters.length)) * 100)}%</span>
-          <input
-            type="range"
-            min="0"
-            max={Math.max(0, chapters.length - 1)}
-            value={currentChapterIndex}
-            onChange={e => setCurrentChapterIndex(Number(e.target.value))}
-            className="reader-progress-slider"
-          />
-          <span>CH {currentChapterIndex + 1} / {chapters.length}</span>
+          <div className="reader-progress-slider-wrap">
+            <span>{Math.round(((currentChapterIndex + 1) / Math.max(1, chapters.length)) * 100)}%</span>
+            <input
+              type="range"
+              min="0"
+              max={Math.max(0, chapters.length - 1)}
+              value={currentChapterIndex}
+              onChange={e => setCurrentChapterIndex(Number(e.target.value))}
+              className="reader-progress-slider"
+            />
+            <span>CH {currentChapterIndex + 1} / {chapters.length}</span>
+          </div>
+
+          <button
+            className="btn btn-sm btn-ghost"
+            disabled={currentChapterIndex >= chapters.length - 1}
+            onClick={() => setCurrentChapterIndex(Math.min(chapters.length - 1, currentChapterIndex + 1))}
+          >
+            <span>NEXT</span>
+            <ChevronRight size={14} />
+          </button>
         </div>
 
-        <button
-          className="btn btn-sm btn-ghost"
-          disabled={currentChapterIndex >= chapters.length - 1}
-          onClick={() => setCurrentChapterIndex(Math.min(chapters.length - 1, currentChapterIndex + 1))}
-        >
-          <span>NEXT</span>
-          <ChevronRight size={14} />
-        </button>
+        {/* Mobile & Tablet Sleek Docked Footer View */}
+        <div className="reader-mobile-only-footer">
+          {/* Table of Contents Trigger */}
+          <button
+            className={`btn btn-sm ${showToc ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => {
+              setShowToc(!showToc);
+              setShowAnnotations(false);
+              setShowSettings(false);
+            }}
+            title="Table of Contents"
+            style={{ height: 32, padding: '0 8px', fontSize: '0.72rem', gap: 4 }}
+          >
+            <LayoutGrid size={13} />
+            <span>TOC</span>
+          </button>
+
+          {/* Chapter Step Counter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              className="btn-icon btn-sm"
+              disabled={currentChapterIndex <= 0}
+              onClick={() => setCurrentChapterIndex(i => Math.max(0, i - 1))}
+              style={{ width: 32, height: 32 }}
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            <span style={{ fontFamily: 'var(--font-tech)', fontSize: '0.75rem', fontWeight: 600, padding: '0 4px', minWidth: 64, textAlign: 'center' }}>
+              CH {currentChapterIndex + 1} / {Math.max(1, chapters.length)}
+            </span>
+
+            <button
+              className="btn-icon btn-sm"
+              disabled={currentChapterIndex >= chapters.length - 1}
+              onClick={() => setCurrentChapterIndex(i => Math.min(chapters.length - 1, i + 1))}
+              style={{ width: 32, height: 32 }}
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          {/* Font Size & Typography Trigger */}
+          <button
+            className={`btn btn-sm ${showSettings ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => {
+              setShowSettings(!showSettings);
+              setShowToc(false);
+              setShowAnnotations(false);
+            }}
+            title="Typography Settings"
+            style={{ fontFamily: 'var(--font-tech)', fontSize: '0.72rem', fontWeight: 600, height: 32, padding: '0 8px' }}
+          >
+            {settings.fontSize}px
+          </button>
+        </div>
       </footer>
     </div>
   );

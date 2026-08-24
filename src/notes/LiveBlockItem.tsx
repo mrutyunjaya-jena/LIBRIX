@@ -251,16 +251,15 @@ export const LiveBlockItem: React.FC<LiveBlockItemProps> = ({
       <div
         className="notion-gutter"
         style={{
-          width: 46,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'flex-end',
           gap: 2,
-          paddingRight: 6,
-          opacity: isHovered ? 1 : 0,
+          paddingRight: 4,
+          opacity: isHovered || isFocused ? 1 : 0.45,
           transition: 'opacity 0.12s ease',
           userSelect: 'none',
-          marginTop: block.type === 'h1' ? 10 : block.type === 'h2' ? 8 : 4,
+          marginTop: block.type === 'h1' ? 8 : block.type === 'h2' ? 6 : 4,
           flexShrink: 0,
         }}
       >

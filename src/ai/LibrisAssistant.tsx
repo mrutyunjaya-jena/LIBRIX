@@ -199,7 +199,7 @@ export const LibrisAssistant: React.FC<LibrisAssistantProps> = ({
       {/* 1. Technical Header */}
       <div
         style={{
-          padding: '10px 14px',
+          padding: 'max(10px, var(--sat)) 14px 10px 14px',
           borderBottom: '1px solid var(--border-subtle)',
           background: 'var(--bg-surface)',
           display: 'flex',
@@ -397,7 +397,7 @@ export const LibrisAssistant: React.FC<LibrisAssistantProps> = ({
       {/* 5. Input Area */}
       <div
         style={{
-          padding: 'var(--space-3)',
+          padding: '10px 12px calc(var(--sab) + 12px) 12px',
           borderTop: '1px solid var(--border-subtle)',
           background: 'var(--bg-surface)',
           display: 'flex',
@@ -416,15 +416,15 @@ export const LibrisAssistant: React.FC<LibrisAssistantProps> = ({
             }
           }}
           disabled={isStreaming}
-          style={{ flex: 1, fontSize: 'var(--text-xs)', padding: '6px 10px' }}
+          style={{ flex: 1, fontSize: 'var(--text-xs)', padding: '8px 12px' }}
         />
         <button
           className="btn btn-primary"
           onClick={() => handleSendMessage()}
           disabled={!inputQuery.trim() || isStreaming}
-          style={{ padding: '6px 10px' }}
+          style={{ padding: '8px 14px' }}
         >
-          <Send size={13} />
+          <Send size={14} />
         </button>
       </div>
     </div>

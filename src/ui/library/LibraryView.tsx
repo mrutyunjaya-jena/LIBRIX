@@ -12,6 +12,7 @@ import {
   FolderInput,
   FolderTree as FolderTreeIcon,
   Trash2,
+  X,
 } from 'lucide-react';
 import { Document, Folder, DocumentFormat, StorageProviderType } from '../../core/types';
 import { DocumentCard } from './DocumentCard';
@@ -68,7 +69,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
   // Layout & Filter State
   const [viewLayout, setViewLayout] = useState<'grid' | 'list'>('grid');
-  const [showFolderSidebar, setShowFolderSidebar] = useState(true);
+  const [showFolderSidebar, setShowFolderSidebar] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth > 768 : true
+  );
   const [formatFilter, setFormatFilter] = useState<string>('all');
   const [providerFilter, setProviderFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'recent' | 'title' | 'author' | 'progress'>('recent');
@@ -353,58 +356,69 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     <div style={{ flex: 1, display: 'flex', height: '100%', overflow: 'hidden' }}>
       {/* 1. Collapsible Nested Folder Tree Drawer */}
       {showFolderSidebar && (
-        <aside
-          style={{
-            width: 220,
-            background: 'var(--bg-surface)',
-            borderRight: '1px solid var(--border-subtle)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}
-        >
+        <>
           <div
-            style={{
-              padding: '10px 12px',
-              borderBottom: '1px solid var(--border-subtle)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
-            <span style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', fontWeight: 600, letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>
-              FOLDERS & VAULT
-            </span>
-            <button
-              className="btn-icon btn-sm"
-              onClick={() => {
-                setCreateFolderParentId(selectedFolderId);
-                setNewFolderName('');
+            className="mobile-drawer-backdrop"
+            onClick={() => setShowFolderSidebar(false)}
+          />
+          <aside className="library-folder-drawer">
+            <div
+              style={{
+                padding: '10px 12px',
+                borderBottom: '1px solid var(--border-subtle)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
               }}
-              title="New Folder"
             >
-              <FolderPlus size={13} />
-            </button>
-          </div>
+              <span style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', fontWeight: 600, letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>
+                FOLDERS & VAULT
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button
+                  className="btn-icon btn-sm"
+                  onClick={() => {
+                    setCreateFolderParentId(selectedFolderId);
+                    setNewFolderName('');
+                  }}
+                  title="New Folder"
+                >
+                  <FolderPlus size={13} />
+                </button>
+                <button
+                  className="btn-icon btn-sm mobile-only-inline"
+                  onClick={() => setShowFolderSidebar(false)}
+                  title="Close Folders"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', padding: '6px' }}>
-            <FolderTree
-              folders={folders}
-              selectedFolderId={selectedFolderId}
-              onSelectFolder={onSelectFolder}
-              onCreateFolder={parentId => {
-                setCreateFolderParentId(parentId);
-                setNewFolderName('');
-              }}
-              onContextMenu={(e, folder) => {
-                setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folder });
-              }}
-              onDropDocumentOnFolder={(docId, folderId) => {
-                onMoveDocumentToFolder(docId, folderId);
-              }}
-            />
-          </div>
-        </aside>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '6px' }}>
+              <FolderTree
+                folders={folders}
+                selectedFolderId={selectedFolderId}
+                onSelectFolder={id => {
+                  onSelectFolder(id);
+                  if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+                    setShowFolderSidebar(false);
+                  }
+                }}
+                onCreateFolder={parentId => {
+                  setCreateFolderParentId(parentId);
+                  setNewFolderName('');
+                }}
+                onContextMenu={(e, folder) => {
+                  setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folder });
+                }}
+                onDropDocumentOnFolder={(docId, folderId) => {
+                  onMoveDocumentToFolder(docId, folderId);
+                }}
+              />
+            </div>
+          </aside>
+        </>
       )}
 
       {/* 2. Main Content & File Grid (Supports Drag & Drop of real files) */}
@@ -414,19 +428,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}
       >
         {/* Header & Controls Toolbar */}
-        <div
-          style={{
-            padding: 'var(--space-3) var(--space-5)',
-            borderBottom: '1px solid var(--border-subtle)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 'var(--space-2)',
-            background: 'var(--bg-app)',
-          }}
-        >
+        <div className="library-toolbar">
           {/* Breadcrumb & Action Row */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-xs)' }}>
+          <div className="library-toolbar-row">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-xs)', minWidth: 0, overflow: 'hidden' }}>
               <button
                 className="btn-icon btn-sm"
                 onClick={() => setShowFolderSidebar(!showFolderSidebar)}
@@ -436,51 +441,54 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               </button>
 
               {/* Breadcrumb Trail */}
-              <button
-                className="btn-ghost btn-sm"
-                onClick={() => onSelectFolder(null)}
-                style={{ fontWeight: selectedFolderId === null ? 700 : 400 }}
-              >
-                Library
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                <button
+                  className="btn-ghost btn-sm"
+                  onClick={() => onSelectFolder(null)}
+                  style={{ fontWeight: selectedFolderId === null ? 700 : 400 }}
+                >
+                  Library
+                </button>
 
-              {breadcrumbs.map(b => (
-                <React.Fragment key={b.id}>
-                  <ChevronRight size={12} style={{ color: 'var(--text-muted)' }} />
-                  <button
-                    className="btn-ghost btn-sm"
-                    onClick={() => onSelectFolder(b.id)}
-                    style={{ fontWeight: selectedFolderId === b.id ? 700 : 400 }}
-                  >
-                    {b.name}
-                  </button>
-                </React.Fragment>
-              ))}
+                {breadcrumbs.map(b => (
+                  <React.Fragment key={b.id}>
+                    <ChevronRight size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                    <button
+                      className="btn-ghost btn-sm"
+                      onClick={() => onSelectFolder(b.id)}
+                      style={{ fontWeight: selectedFolderId === b.id ? 700 : 400, maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    >
+                      {b.name}
+                    </button>
+                  </React.Fragment>
+                ))}
+              </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setCreateFolderParentId(selectedFolderId);
                   setNewFolderName('');
                 }}
+                title="New Folder"
               >
                 <FolderPlus size={13} />
-                <span>New Folder</span>
+                <span className="hide-on-mobile-xs">New Folder</span>
               </button>
 
-              <button className="btn btn-primary btn-sm" onClick={handlePickAndImport}>
+              <button className="btn btn-primary btn-sm" onClick={handlePickAndImport} title="Import File">
                 <Plus size={14} />
-                <span>Import File</span>
+                <span>Import</span>
               </button>
             </div>
           </div>
 
           {/* Filter Pills & Sort Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+          <div className="library-filter-scroll-row">
             {/* Format Pills */}
-            <div style={{ display: 'flex', gap: 3 }}>
+            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
               {[
                 { id: 'all', label: 'All' },
                 { id: 'epub', label: 'EPUB' },
@@ -490,6 +498,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 <button
                   key={f.id}
                   className={`btn btn-sm ${formatFilter === f.id ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '3px 9px', fontSize: '0.72rem', whiteSpace: 'nowrap' }}
                   onClick={() => setFormatFilter(f.id)}
                 >
                   {f.label}
@@ -498,11 +507,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             </div>
 
             {/* Storage, Sort, Layout */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 'auto' }}>
               <select
                 value={providerFilter}
                 onChange={e => setProviderFilter(e.target.value)}
-                style={{ fontSize: 'var(--text-2xs)', padding: '3px 6px' }}
+                style={{ fontSize: '0.7rem', padding: '3px 6px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', borderRadius: 'var(--radius-xs)' }}
               >
                 <option value="all">ALL STORAGE</option>
                 <option value="local">LOCAL DISK</option>
@@ -515,10 +524,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               <select
                 value={sortBy}
                 onChange={e => setSortBy(e.target.value as any)}
-                style={{ fontSize: 'var(--text-2xs)', padding: '3px 6px' }}
+                style={{ fontSize: '0.7rem', padding: '3px 6px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', borderRadius: 'var(--radius-xs)' }}
               >
                 <option value="recent">RECENT</option>
-                <option value="title">TITLE (A-Z)</option>
+                <option value="title">TITLE</option>
                 <option value="author">AUTHOR</option>
                 <option value="progress">PROGRESS</option>
               </select>
@@ -546,7 +555,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         </div>
 
         {/* File Grid / Table View */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-5)' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3) var(--space-4) calc(var(--mobile-nav-height) + var(--sab) + 40px) var(--space-4)' }}>
           {filtered.length === 0 ? (
             <div
               style={{
@@ -576,13 +585,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               </div>
             </div>
           ) : viewLayout === 'grid' ? (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-                gap: 'var(--space-4)',
-              }}
-            >
+            <div className="adaptive-grid-library">
               {filtered.map(doc => (
                 <DocumentCard
                   key={doc.id}

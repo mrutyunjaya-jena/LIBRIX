@@ -107,6 +107,18 @@ export class CloudVaultSyncService {
 
       const payload = new TextEncoder().encode(JSON.stringify(indexData, null, 2));
       await provider.upload('/LIBRIX', 'vault_index.json', payload, 'application/json');
+
+      // Also sync all notes as individual Markdown files to /LIBRIX/Notes
+      for (const note of allNotes) {
+        try {
+          const targetPath = await this.getFolderPathString(note.folderId, '/LIBRIX/Notes');
+          const safeTitle = (note.title || 'Untitled_Note').replace(/[/\\?%*:|"<>]/g, '_');
+          const noteBytes = new TextEncoder().encode(note.content || `# ${note.title}\n\n`);
+          await provider.upload(targetPath, `${safeTitle}.md`, noteBytes, 'text/markdown');
+        } catch (noteUploadErr) {
+          console.warn(`[LIBRIX::CloudSync] Note "${note.title}" upload error:`, noteUploadErr);
+        }
+      }
     } catch (err) {
       console.warn(`[LIBRIX::CloudSync] Failed to save vault_index.json to ${provider.name}:`, err);
     }
@@ -191,9 +203,12 @@ export class CloudVaultSyncService {
 
       // 3. Fallback / Direct Discovery: Scan /LIBRIX/Library and /LIBRIX/Notes directly
       if (!indexRestored) {
-        // A. Discover books in /LIBRIX/Library
+        // A. Discover books in /LIBRIX/Library or across the entire cloud account
         try {
-          const libraryFiles = await provider.listFiles('/LIBRIX/Library');
+          let libraryFiles = await provider.listFiles('/LIBRIX/Library');
+          if (libraryFiles.length === 0) {
+            libraryFiles = await provider.listFiles('');
+          }
           const existingDocs = await db.getDocuments({ filterTrash: false });
           const existingNames = new Set(existingDocs.map(d => (d.filename || '').toLowerCase()));
 

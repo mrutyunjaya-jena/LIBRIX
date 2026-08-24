@@ -465,11 +465,16 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
 
       if (!authSuccess || !provider.isConnected()) {
         const state = (provider as any).getConnectionState?.();
-        const errorMsg =
+        let errorMsg =
           state?.lastError ||
           (state?.status === 'cancelled'
             ? 'Authentication cancelled by user.'
             : 'Authentication failed. The provider could not verify access with Google Drive API.');
+
+        if (errorMsg.includes('The OAuth client was not found') || errorMsg.includes('invalid_client')) {
+          errorMsg = 'Google OAuth Client Mismatch: When connecting with a custom Refresh Token, you must also enter the Google Cloud Client ID (and Client Secret) that generated this token in the fields below.';
+        }
+
         setConnectingError(errorMsg);
         setConnectingStatus(null);
         return;
@@ -494,7 +499,11 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
         quotaTotal: quota.total,
         quotaUsed: quota.used,
         isDefault: false,
-        config: customClientId ? { oauthClientId: customClientId } : {},
+        config: {
+          oauthClientId: customClientId || undefined,
+          apiKey: token || undefined,
+          refreshToken: refreshToken || undefined,
+        },
       };
 
       await db.saveCloudConnection(newConn);
@@ -786,6 +795,7 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
         hash: 'hash_' + Date.now(),
         storageProvider: browsingConnection.providerType,
         storagePath: item.path,
+        cloudFileId: item.id,
         folderId: null,
         isFavorite: false,
         isTrash: false,
@@ -924,30 +934,21 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Header Bar */}
-      <div
-        style={{
-          padding: 'var(--space-3) var(--space-5)',
-          borderBottom: '1px solid var(--border-subtle)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          background: 'var(--bg-app)',
-        }}
-      >
+      <div className="cloud-manager-header">
         <div>
           <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 700, letterSpacing: '0.04em' }}>
             STORAGE CAPACITY & MULTI-CLOUD ARCHITECTURE
           </h2>
           <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-            Real physical volume detection, separate Librix usage indexing, and multi-cloud synchronization.
+            Physical volume detection, Librix usage indexing, and multi-cloud synchronization.
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <div className="cloud-manager-actions">
           {/* Default Storage Destination Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-surface)', padding: '3px 8px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-surface)', padding: '4px 8px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)', flexShrink: 0 }}>
             <span style={{ fontSize: 'var(--text-2xs)', fontFamily: 'var(--font-tech)', color: 'var(--text-muted)' }}>
-              DEFAULT STORAGE:
+              DEFAULT:
             </span>
             <select
               style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: 'var(--text-xs)', fontWeight: 600, cursor: 'pointer', outline: 'none' }}
@@ -962,22 +963,22 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
             </select>
           </div>
 
-          <button className="btn btn-secondary btn-sm" onClick={refreshAllStorageData} disabled={isRefreshing}>
+          <button className="btn btn-secondary btn-sm" onClick={refreshAllStorageData} disabled={isRefreshing} style={{ flexShrink: 0 }}>
             <RefreshCw size={13} className={isRefreshing ? 'spinning' : ''} />
             <span>{isRefreshing ? 'Refreshing...' : 'Refresh Quotas'}</span>
           </button>
 
           <button
             className="btn btn-secondary btn-sm"
-            style={{ color: '#0ea5e9', borderColor: 'rgba(14, 165, 233, 0.4)' }}
+            style={{ color: '#0ea5e9', borderColor: 'rgba(14, 165, 233, 0.4)', flexShrink: 0 }}
             onClick={handleOpenMigrationModal}
             title="Migrate all local books, documents and notes to connected Cloud Storage"
           >
             <ArrowRightLeft size={13} />
-            <span>Migrate Vault to Cloud</span>
+            <span>Migrate Vault</span>
           </button>
 
-          <button className="btn btn-primary btn-sm" onClick={() => { setShowAddModal(true); setIsCustomWizard(false); setSelectedPopularType(null); }}>
+          <button className="btn btn-primary btn-sm" onClick={() => { setShowAddModal(true); setIsCustomWizard(false); setSelectedPopularType(null); }} style={{ flexShrink: 0 }}>
             <Plus size={13} />
             <span>Add Storage</span>
           </button>
@@ -987,7 +988,7 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
       {/* Main Workspace Layout */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Left Scrollable Area */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3) var(--space-4) calc(var(--mobile-nav-height) + var(--sab) + 40px) var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
 
           {/* SECTION 1: PHYSICAL STORAGE vs LIBRIX USAGE */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 'var(--space-4)' }}>
@@ -1776,15 +1777,15 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                           ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                               <div style={{ background: 'var(--bg-surface)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)', fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>Direct Google Drive Token Authentication:</div>
-                                <div>You can connect using an <strong>Access Token</strong> (starts with <code>ya29...</code>), a <strong>Refresh Token</strong> (starts with <code>1//0...</code>), or both.</div>
-                                <div style={{ marginTop: 4, fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                                  Tip: Get tokens easily from <a href="https://developers.google.com/oauthplayground" target="_blank" rel="noreferrer" style={{ color: 'var(--text-primary)', textDecoration: 'underline' }}>Google OAuth 2.0 Playground</a> under <em>Drive API v3</em>.
-                                </div>
+                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>Direct Google Drive Token Options:</div>
+                                <div>• <strong>Access Token</strong> (starts with <code>ya29...</code>): Connects directly. <em>No Client ID needed.</em></div>
+                                <div>• <strong>Refresh Token</strong> (starts with <code>1//0...</code>): Enables permanent auto-refresh. <em>Google requires your GCP Client ID to refresh tokens.</em></div>
                               </div>
 
                               <div className="form-group">
-                                <label className="form-label" style={{ fontSize: '0.72rem' }}>Google OAuth Access Token (Optional if Refresh Token provided)</label>
+                                <label className="form-label" style={{ fontSize: '0.72rem' }}>
+                                  Google OAuth Access Token <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>(Recommended - No Client ID needed)</span>
+                                </label>
                                 <input
                                   type="password"
                                   placeholder="ya29.a0AfH6SM..."
@@ -1795,10 +1796,12 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                               </div>
 
                               <div className="form-group">
-                                <label className="form-label" style={{ fontSize: '0.72rem' }}>Google OAuth Refresh Token (Optional if Access Token provided)</label>
+                                <label className="form-label" style={{ fontSize: '0.72rem' }}>
+                                  Google OAuth Refresh Token <span style={{ color: 'var(--text-muted)' }}>(Requires Client ID below)</span>
+                                </label>
                                 <input
                                   type="password"
-                                  placeholder="1//04... (Enables permanent auto-refresh)"
+                                  placeholder="1//04... (For permanent auto-refresh)"
                                   value={popularRefreshToken}
                                   disabled={!!connectingStatus}
                                   onChange={e => setPopularRefreshToken(e.target.value)}
@@ -1807,7 +1810,9 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
 
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                 <div className="form-group">
-                                  <label className="form-label" style={{ fontSize: '0.68rem' }}>Custom Client ID (Optional)</label>
+                                  <label className="form-label" style={{ fontSize: '0.68rem' }}>
+                                    Client ID {popularRefreshToken.trim() && !popularAuthToken.trim() ? <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>*Required for Refresh Token</span> : '(Optional)'}
+                                  </label>
                                   <input
                                     type="text"
                                     placeholder="e.g. 123...apps.googleusercontent.com"
@@ -1817,7 +1822,7 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                                   />
                                 </div>
                                 <div className="form-group">
-                                  <label className="form-label" style={{ fontSize: '0.68rem' }}>Custom Client Secret (Optional)</label>
+                                  <label className="form-label" style={{ fontSize: '0.68rem' }}>Client Secret (Optional)</label>
                                   <input
                                     type="password"
                                     placeholder="GOCSPX-..."

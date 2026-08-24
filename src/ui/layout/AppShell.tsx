@@ -46,6 +46,7 @@ export const AppShell: React.FC = () => {
   const reloadData = async () => {
     try {
       await db.initialize();
+      await storageRegistry.initializeFromDatabase();
       const docs = await db.getDocuments();
       const flds = await db.getFolders();
       const nts = await db.getNotes();
@@ -212,7 +213,7 @@ export const AppShell: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+    <div className="app-safe-container">
       {/* 1. Header */}
       <Header
         onOpenCommandPalette={() => setShowCommandPalette(true)}
@@ -228,7 +229,7 @@ export const AppShell: React.FC = () => {
 
       {/* 2. Main Content Workspace */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* Desktop Sidebar */}
+        {/* Desktop Sidebar / Tablet Navigation Rail */}
         <Sidebar
           activeTab={activeTab}
           onSelectTab={setActiveTab}
@@ -238,7 +239,7 @@ export const AppShell: React.FC = () => {
         />
 
         {/* Dynamic Main Stage */}
-        <main style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <main className="app-main-content" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
           {activeTab === 'library' && (
             <LibraryView
               documents={documents}
@@ -296,7 +297,14 @@ export const AppShell: React.FC = () => {
       </div>
 
       {/* 3. Mobile Navigation Bar */}
-      <MobileNavigation activeTab={activeTab} onSelectTab={setActiveTab} />
+      <MobileNavigation
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        onOpenLibris={() => {
+          setLibrisPassage(undefined);
+          setShowLibris(true);
+        }}
+      />
 
       {/* 4. Fullscreen Document Reader Modal */}
       {activeReadingDoc && (
@@ -319,6 +327,7 @@ export const AppShell: React.FC = () => {
       {/* 5. Libris Assistant Workstation Drawer (Top Layer Overlay) */}
       {showLibris && (
         <div
+          className="adaptive-libris-panel"
           style={{
             position: 'fixed',
             top: 0,

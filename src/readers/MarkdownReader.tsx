@@ -252,8 +252,8 @@ export const MarkdownReader: React.FC<IReaderProps & { onNavigateWikilink?: (tit
           onMouseDown={e => e.preventDefault()}
           style={{
             position: 'fixed',
-            left: `${selectionPos.x}px`,
-            top: `${selectionPos.y}px`,
+            left: `${Math.max(10, Math.min(window.innerWidth - 220, selectionPos.x))}px`,
+            top: `${Math.max(10, selectionPos.y)}px`,
             transform: 'translateX(-50%)',
             zIndex: 1500,
             background: 'var(--bg-surface-elevated)',
@@ -264,6 +264,8 @@ export const MarkdownReader: React.FC<IReaderProps & { onNavigateWikilink?: (tit
             display: 'flex',
             alignItems: 'center',
             gap: 4,
+            maxWidth: 'calc(100vw - 20px)',
+            overflowX: 'auto',
           }}
         >
           <button className="btn btn-sm btn-primary" onClick={() => createHighlight('box')} title="Highlight">
@@ -314,17 +316,21 @@ export const MarkdownReader: React.FC<IReaderProps & { onNavigateWikilink?: (tit
 
       {/* Header */}
       <header className="reader-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-          <button className="btn-icon btn-sm" onClick={onClose} title="Back">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', minWidth: 0, flex: 1 }}>
+          <button className="btn-icon btn-sm" onClick={onClose} title="Back" style={{ flexShrink: 0 }}>
             <ArrowLeft size={16} />
           </button>
-          <div className="reader-title-area">
-            <div className="reader-doc-title">{document.title}</div>
-            <div className="reader-chapter-title">{document.author} • {document.storageProvider.toUpperCase()}</div>
+          <div className="reader-title-area" style={{ minWidth: 0 }}>
+            <div className="reader-doc-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {document.title}
+            </div>
+            <div className="reader-chapter-title">
+              {document.author} • {document.storageProvider.toUpperCase()}
+            </div>
           </div>
         </div>
 
-        <div className="reader-actions">
+        <div className="reader-actions" style={{ flexShrink: 0 }}>
           <button className="btn-icon btn-sm" onClick={handleCopy} title="Copy Content">
             {copied ? <Check size={16} /> : <Copy size={16} />}
           </button>
@@ -348,7 +354,7 @@ export const MarkdownReader: React.FC<IReaderProps & { onNavigateWikilink?: (tit
           {onOpenLibris && (
             <button className="btn btn-sm btn-primary" onClick={() => onOpenLibris()}>
               <Sparkles size={13} />
-              <span>Libris AI</span>
+              <span className="hide-on-mobile-xs">Libris AI</span>
             </button>
           )}
         </div>
@@ -357,7 +363,7 @@ export const MarkdownReader: React.FC<IReaderProps & { onNavigateWikilink?: (tit
       {/* Main Content & Annotations Drawer */}
       <div className="reader-viewport">
         <main className="reader-stage selectable" ref={stageRef as any} onScroll={handleScroll}>
-          <div className="reader-content-frame" style={{ maxWidth: 780 }}>
+          <div className="reader-content-frame" style={{ maxWidth: 780, padding: 'clamp(14px, 4vw, 32px)' }}>
             {/* Tag Pills */}
             {document.tags.length > 0 && (
               <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
@@ -377,7 +383,9 @@ export const MarkdownReader: React.FC<IReaderProps & { onNavigateWikilink?: (tit
 
         {/* Annotations Drawer */}
         {showAnnotations && (
-          <aside className="reader-sidebar">
+          <>
+            <div className="mobile-drawer-backdrop" onClick={() => setShowAnnotations(false)} />
+            <aside className="reader-sidebar">
             <div className="reader-sidebar-header">
               <span style={{ fontFamily: 'var(--font-tech)', fontWeight: 600, fontSize: 'var(--text-2xs)', letterSpacing: '0.05em' }}>
                 ANNOTATIONS ({annotations.length})
@@ -411,6 +419,7 @@ export const MarkdownReader: React.FC<IReaderProps & { onNavigateWikilink?: (tit
               )}
             </div>
           </aside>
+          </>
         )}
       </div>
     </div>

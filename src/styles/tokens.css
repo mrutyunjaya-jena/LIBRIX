@@ -43,6 +43,19 @@
   --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 
+  /* Touch Targets & Safe Area Insets (Mobile & Tablet) */
+  --touch-target-min: 44px;
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+
+  /* Responsive Layout Dimensions */
+  --sidebar-width-desktop: 210px;
+  --sidebar-width-tablet: 68px;
+  --header-height: 48px;
+  --mobile-nav-height: 56px;
+
   /* Grayscale Universal Tonal Palette */
   --gray-0: #000000;
   --gray-50: #0a0a0a;

@@ -31,21 +31,9 @@ export const Header: React.FC<HeaderProps> = ({
   const platform = usePlatform();
 
   return (
-    <header
-      style={{
-        height: 48,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 var(--space-4)',
-        background: 'var(--bg-sidebar)',
-        borderBottom: '1px solid var(--border-subtle)',
-        userSelect: 'none',
-        zIndex: 40,
-      }}
-    >
+    <header className="app-adaptive-header">
       {/* Sci-Fi Brand Logo & Platform Badge */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
         <div
           className="scifi-glitch-hover"
           style={{
@@ -76,8 +64,8 @@ export const Header: React.FC<HeaderProps> = ({
           <span>LIBRIX</span>
         </div>
 
-        <span className="badge" style={{ fontSize: '0.62rem', letterSpacing: '0.04em' }}>
-          {platform.platform.os.toUpperCase()} // SYS
+        <span className="badge sidebar-rail-hide" style={{ fontSize: '0.58rem', letterSpacing: '0.04em' }}>
+          {platform.platform.os.toUpperCase()}
         </span>
       </div>
 
@@ -87,23 +75,26 @@ export const Header: React.FC<HeaderProps> = ({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 'var(--space-3)',
+          gap: 'var(--space-2)',
           background: 'var(--bg-input)',
           border: '1px solid var(--border-subtle)',
           borderRadius: 'var(--radius-sm)',
-          padding: '4px 12px',
+          padding: '4px 10px',
           width: '100%',
-          maxWidth: 380,
+          maxWidth: 320,
           cursor: 'pointer',
           color: 'var(--text-muted)',
           fontSize: 'var(--text-xs)',
           transition: 'all var(--transition-fast)',
+          margin: '0 var(--space-2)',
         }}
         className="card-interactive"
       >
-        <Search size={13} />
-        <span style={{ flex: 1 }}>Search library, notes, commands...</span>
-        <span className="palette-shortcut">Ctrl+K</span>
+        <Search size={13} style={{ flexShrink: 0 }} />
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          Search library, notes...
+        </span>
+        <span className="palette-shortcut sidebar-rail-hide">Ctrl+K</span>
       </div>
 
       {/* Action Controls */}
@@ -113,6 +104,7 @@ export const Header: React.FC<HeaderProps> = ({
           className={`btn-icon btn-sm ${isSyncing ? 'active' : ''}`}
           onClick={onTriggerSync}
           title={isSyncing ? 'Syncing...' : 'Sync Storage'}
+          aria-label="Sync Storage"
         >
           <RefreshCw size={14} className={isSyncing ? 'spinning' : ''} />
         </button>
@@ -122,15 +114,17 @@ export const Header: React.FC<HeaderProps> = ({
           className="btn-icon btn-sm"
           onClick={onToggleTheme}
           title={activeTheme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          aria-label="Toggle Theme"
         >
           {activeTheme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
         </button>
 
         {/* Libris AI Assistant Button */}
         <button
-          className="btn btn-primary btn-sm"
+          className="btn btn-primary btn-sm sidebar-rail-hide"
           onClick={onOpenLibris}
           title="Open Libris AI Research Assistant"
+          aria-label="Open Libris AI"
         >
           <Sparkles size={13} />
           <span>Libris AI</span>

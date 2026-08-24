@@ -21,7 +21,7 @@ export const FloatingFormatToolbar: React.FC<FloatingFormatToolbarProps> = ({
       style={{
         position: 'absolute',
         top: Math.max(10, position.top - 42),
-        left: Math.max(20, position.left - 100),
+        left: Math.max(8, Math.min(position.left - 100, Math.max(8, window.innerWidth - 270))),
         display: 'flex',
         alignItems: 'center',
         gap: 2,
@@ -33,6 +33,8 @@ export const FloatingFormatToolbar: React.FC<FloatingFormatToolbarProps> = ({
         zIndex: 1000,
         backdropFilter: 'blur(12px)',
         animation: 'fadeIn 0.15s ease-out',
+        maxWidth: 'calc(100vw - 16px)',
+        overflowX: 'auto',
       }}
       onMouseDown={e => e.preventDefault()} // Prevent textarea blur
     >

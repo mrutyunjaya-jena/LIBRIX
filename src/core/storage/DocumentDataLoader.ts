@@ -27,13 +27,24 @@ export class DocumentDataLoader {
     // 2. If not present locally, stream directly from connected cloud provider
     if (document.storageProvider && document.storageProvider !== 'local') {
       try {
+        await storageRegistry.initializeFromDatabase();
+
         const provider =
           storageRegistry.getProvider(document.storageProvider) ||
-          storageRegistry.getAllProviders().find(p => p.type === document.storageProvider);
+          storageRegistry.getAllProviders().find(p => p.type === document.storageProvider && p.isConnected()) ||
+          storageRegistry.getAllProviders().find(p => p.type === document.storageProvider) ||
+          (document.storageProvider === 'gdrive' ? storageRegistry.getProvider('gdrive-main') : undefined);
 
         if (provider) {
-          await provider.authenticate();
-          const remoteBytes = await provider.download(document.storagePath || document.id);
+          if (!provider.isConnected()) {
+            await provider.authenticate().catch(() => {});
+          }
+          const targetIdOrPath = document.cloudFileId || document.storagePath || document.filename || document.id;
+          const hintFilename = document.filename || document.title;
+          const remoteBytes = typeof (provider as any).download === 'function'
+            ? await (provider as any).download(targetIdOrPath, hintFilename)
+            : await provider.download(targetIdOrPath);
+
           if (remoteBytes && remoteBytes.length > 0) {
             // Cache locally for offline availability
             await fileBinaryStore.saveFileBlob(

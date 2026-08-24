@@ -26,9 +26,13 @@ export interface ParsedPdfDocument {
 
 export class PdfParser {
   public static async loadPdfDocument(data: Uint8Array): Promise<pdfjsLib.PDFDocumentProxy> {
-    const loadingTask = pdfjsLib.getDocument({
-      data,
+    // Clone buffer to avoid detachment issues across worker boundaries
+    const cleanBuffer = new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+    
+    const loadingTask = (pdfjsLib as any).getDocument({
+      data: cleanBuffer,
       useSystemFonts: true,
+      isEvalSupported: false,
     });
     return await loadingTask.promise;
   }
@@ -68,11 +72,40 @@ export class PdfParser {
     }
   }
 
+  /**
+   * Extract text content for a single page on-demand
+   */
+  public static async extractPageText(pdfDoc: pdfjsLib.PDFDocumentProxy, pageNum: number): Promise<string> {
+    try {
+      const page = await pdfDoc.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const strings: string[] = [];
+      let lastY: number | null = null;
+
+      for (const item of textContent.items as any[]) {
+        if ('str' in item) {
+          const currentY = item.transform ? item.transform[5] : null;
+          if (lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 8) {
+            strings.push('\n\n');
+          } else if (strings.length > 0 && !strings[strings.length - 1].endsWith(' ')) {
+            strings.push(' ');
+          }
+          strings.push(item.str);
+          lastY = currentY;
+        }
+      }
+
+      return strings.join('').replace(/\n{3,}/g, '\n\n').trim() || `[Page ${pageNum}]`;
+    } catch (e) {
+      console.warn(`Could not extract text for page ${pageNum}:`, e);
+      return `[Page ${pageNum}]`;
+    }
+  }
+
   public static async parse(data: Uint8Array): Promise<ParsedPdfDocument> {
     try {
       const pdfDoc = await PdfParser.loadPdfDocument(data);
       const numPages = pdfDoc.numPages;
-      const pages: ParsedPdfPage[] = [];
 
       let metaTitle = '';
       let metaAuthor = '';
@@ -88,42 +121,23 @@ export class PdfParser {
         // metadata optional
       }
 
-      for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-        try {
-          const page = await pdfDoc.getPage(pageNum);
-          const textContent = await page.getTextContent();
+      // Initialize fast lightweight page stubs without blocking UI thread
+      const pages: ParsedPdfPage[] = Array.from({ length: numPages }, (_, i) => ({
+        pageNumber: i + 1,
+        textContent: '',
+        title: `Page ${i + 1}`,
+      }));
 
-          const strings: string[] = [];
-          let lastY: number | null = null;
-
-          for (const item of textContent.items as any[]) {
-            if ('str' in item) {
-              const currentY = item.transform ? item.transform[5] : null;
-              if (lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 8) {
-                strings.push('\n\n');
-              } else if (strings.length > 0 && !strings[strings.length - 1].endsWith(' ')) {
-                strings.push(' ');
-              }
-              strings.push(item.str);
-              lastY = currentY;
-            }
-          }
-
-          const rawText = strings.join('').replace(/\n{3,}/g, '\n\n').trim();
-          const firstLine = rawText.split('\n')[0]?.trim() || `Page ${pageNum}`;
-
-          pages.push({
-            pageNumber: pageNum,
-            textContent: rawText || `[Page ${pageNum}]`,
-            title: firstLine.length > 60 ? firstLine.slice(0, 57) + '...' : firstLine,
-          });
-        } catch {
-          pages.push({
-            pageNumber: pageNum,
-            textContent: `[Page ${pageNum}]`,
-            title: `Page ${pageNum}`,
-          });
+      // Extract Page 1 text immediately for initial display
+      try {
+        const page1Text = await PdfParser.extractPageText(pdfDoc, 1);
+        pages[0].textContent = page1Text;
+        const firstLine = page1Text.split('\n')[0]?.trim();
+        if (firstLine && firstLine.length > 2) {
+          pages[0].title = firstLine.length > 60 ? firstLine.slice(0, 57) + '...' : firstLine;
         }
+      } catch {
+        // non-blocking
       }
 
       return {

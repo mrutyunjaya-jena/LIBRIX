@@ -334,9 +334,9 @@ export const SlashMenu: React.FC<SlashMenuProps> = ({
       style={{
         position: 'absolute',
         top: Math.max(10, Math.min(position.top, window.innerHeight - 380)),
-        left: Math.max(20, Math.min(position.left, window.innerWidth - 320)),
-        width: 300,
-        maxHeight: 360,
+        left: Math.max(12, Math.min(position.left, Math.max(12, window.innerWidth - Math.min(300, window.innerWidth - 24) - 12))),
+        width: Math.min(300, window.innerWidth - 24),
+        maxHeight: 'min(360px, 70vh)',
         overflowY: 'auto',
         background: 'var(--bg-card)',
         border: '1px solid var(--border-medium)',

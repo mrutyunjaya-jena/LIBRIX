@@ -133,22 +133,8 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
 
   const handleDeleteNote = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Delete this note permanently?')) {
-      const noteToDelete = await db.getNoteById(id);
+    if (confirm('Remove this note from your local workspace? (Note will stay safely preserved on Google Drive)')) {
       await db.deleteNote(id);
-
-      // Remove from connected cloud providers
-      try {
-        const cloudProviders = storageRegistry.getAllProviders().filter(p => p.type !== 'local' && p.isConnected());
-        for (const provider of cloudProviders) {
-          const safeTitle = (noteToDelete?.title || 'Untitled_Note').replace(/[/\\?%*:|"<>]/g, '_');
-          await provider.delete(`${safeTitle}.md`).catch(() => {});
-          await cloudVaultSyncService.saveMasterVaultCatalog(provider).catch(() => {});
-        }
-      } catch (cloudErr) {
-        console.warn('Could not delete note from cloud storage:', cloudErr);
-      }
-
       if (activeNote?.id === id) setActiveNote(null);
       onNotesUpdated();
     }
@@ -176,24 +162,15 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Header */}
-      <div
-        style={{
-          padding: 'var(--space-3) var(--space-5)',
-          borderBottom: '1px solid var(--border-subtle)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 'var(--space-2)',
-          background: 'var(--bg-app)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* Main Header & Toolbar */}
+      <div className="notes-toolbar">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
           <div>
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 700, letterSpacing: '0.04em' }}>
               KNOWLEDGE VAULT
             </h2>
             <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-              Interactive block canvas with slash commands (<code style={{ color: 'var(--text-primary)' }}>/</code>), callout blocks, checklists, [[Wikilinks]], and graph backlinks.
+              Interactive block canvas with slash commands (<code style={{ color: 'var(--text-primary)' }}>/</code>), callouts, [[Wikilinks]], and graph.
             </p>
           </div>
 
@@ -231,23 +208,23 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
         </div>
 
         {/* Filter & Search Bar */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-          <div className="input-with-icon" style={{ width: 220 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+          <div className="input-with-icon" style={{ width: 200, minWidth: 140 }}>
             <Search size={13} />
             <input
               type="text"
-              placeholder="Search notes & content..."
+              placeholder="Search notes..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              style={{ fontSize: 'var(--text-xs)', height: 30 }}
+              style={{ fontSize: 'var(--text-xs)', height: 28 }}
             />
           </div>
 
           {/* Status Filter Pills */}
-          <div style={{ display: 'flex', gap: 3, alignItems: 'center', borderRight: '1px solid var(--border-subtle)', paddingRight: 8 }}>
+          <div style={{ display: 'flex', gap: 3, alignItems: 'center', borderRight: '1px solid var(--border-subtle)', paddingRight: 6 }}>
             <button
               className={`btn btn-sm ${selectedStatus === null ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ fontSize: '0.7rem' }}
+              style={{ fontSize: '0.7rem', padding: '3px 8px' }}
               onClick={() => setSelectedStatus(null)}
             >
               All
@@ -256,7 +233,7 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
               <button
                 key={st}
                 className={`btn btn-sm ${selectedStatus === st ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ fontSize: '0.7rem' }}
+                style={{ fontSize: '0.7rem', padding: '3px 8px' }}
                 onClick={() => setSelectedStatus(selectedStatus === st ? null : st)}
               >
                 {st}
@@ -270,7 +247,7 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
               <button
                 key={tag}
                 className={`btn btn-sm ${selectedTag === tag ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ fontSize: '0.7rem' }}
+                style={{ fontSize: '0.7rem', padding: '3px 8px' }}
                 onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
               >
                 #{tag}
@@ -281,7 +258,7 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
       </div>
 
       {/* Notes Container */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-5)' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3) var(--space-4) calc(var(--mobile-nav-height) + var(--sab) + 40px) var(--space-4)' }}>
         {filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 'var(--space-12)', color: 'var(--text-muted)' }}>
             <FileText size={36} style={{ opacity: 0.3, marginBottom: 8 }} />
@@ -294,7 +271,7 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
           </div>
         ) : viewLayout === 'grid' ? (
           /* GALLERY GRID VIEW: Refined Aesthetic Cards */
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 'var(--space-4)' }}>
+          <div className="adaptive-grid-notes">
             {filtered.map(note => {
               const noteIcon = note.frontmatter?.icon || '📄';
               const noteCover = note.frontmatter?.cover;

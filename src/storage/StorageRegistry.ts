@@ -110,6 +110,38 @@ export class StorageRegistry {
     return provider;
   }
 
+  public async initializeFromDatabase(): Promise<void> {
+    try {
+      const { db } = await import('../core/db/DatabaseEngine');
+      const connections = await db.getCloudConnections();
+      for (const conn of connections) {
+        let provider = this.getProvider(conn.id);
+        const cfg = conn.config || {};
+        if (!provider) {
+          provider = this.createCustomProvider({
+            id: conn.id,
+            name: conn.name,
+            type: conn.providerType,
+            apiKey: cfg.apiKey || cfg.token,
+            endpointUrl: cfg.endpointUrl,
+            username: cfg.username,
+            password: cfg.password,
+          });
+        }
+        if (provider && !provider.isConnected()) {
+          const directToken = cfg.apiKey || cfg.token;
+          if (directToken) {
+            await provider.authenticate({ accessToken: directToken }).catch(() => {});
+          } else if (typeof (provider as any).restoreSession === 'function') {
+            await (provider as any).restoreSession().catch(() => {});
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('StorageRegistry initializeFromDatabase error:', err);
+    }
+  }
+
   public async fetchUnifiedFiles(): Promise<StorageItem[]> {
     const results: StorageItem[] = [];
     for (const provider of this.providers.values()) {

@@ -75,7 +75,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
   const [allNotes, setAllNotes] = useState<Note[]>([]);
   const [backlinksList, setBacklinksList] = useState<Note[]>([]);
-  const [showInspector, setShowInspector] = useState(true);
+  const [showInspector, setShowInspector] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth > 900 : true
+  );
   const [isSaved, setIsSaved] = useState(true);
   const [isZenMode, setIsZenMode] = useState(false);
 
@@ -179,17 +181,17 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
     await db.saveNote(updatedNote);
 
-    // Sync to default cloud provider if configured and connected
-    const defaultProvider = storageRegistry.getDefaultProvider();
-    if (defaultProvider && defaultProvider.type !== 'local' && defaultProvider.isConnected()) {
+    // Sync to all connected cloud providers (e.g. Google Drive)
+    const cloudProviders = storageRegistry.getAllProviders().filter(p => p.type !== 'local' && p.isConnected());
+    for (const provider of cloudProviders) {
       try {
         const targetFolderPath = await cloudVaultSyncService.getFolderPathString(updatedNote.folderId, '/LIBRIX/Notes');
         const safeTitle = (updatedNote.title || 'Untitled_Note').replace(/[/\\?%*:|"<>]/g, '_');
         const noteBytes = new TextEncoder().encode(updatedNote.content);
-        await defaultProvider.upload(targetFolderPath, `${safeTitle}.md`, noteBytes, 'text/markdown');
-        await cloudVaultSyncService.saveMasterVaultCatalog(defaultProvider).catch(() => {});
+        await provider.upload(targetFolderPath, `${safeTitle}.md`, noteBytes, 'text/markdown');
+        await cloudVaultSyncService.saveMasterVaultCatalog(provider).catch(() => {});
       } catch (cloudErr) {
-        console.warn('Could not sync note to default cloud provider:', cloudErr);
+        console.warn('Could not sync note to cloud provider:', cloudErr);
       }
     }
 
@@ -376,30 +378,19 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       }}
     >
       {/* Top Navigation & Action Header */}
-      <header
-        style={{
-          height: 48,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 var(--space-4)',
-          background: 'var(--bg-surface)',
-          borderBottom: '1px solid var(--border-subtle)',
-          zIndex: 40,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+      <header className="markdown-editor-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}>
           <button className="btn-icon btn-sm" onClick={onClose} title="Back to Notes Vault">
             <ArrowLeft size={16} />
           </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             <span style={{ fontSize: '1.15rem' }}>{icon}</span>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-sm)', letterSpacing: '0.03em' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--text-sm)', letterSpacing: '0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 160 }}>
                 {title || 'Untitled Note'}
               </div>
               <div style={{ fontFamily: 'var(--font-tech)', fontSize: 'var(--text-2xs)', color: isSaved ? 'var(--text-muted)' : '#f59e0b' }}>
-                {isSaved ? 'SAVED // SYNCED' : 'UNSAVED CHANGES •'}
+                {isSaved ? 'SAVED // SYNCED' : 'UNSAVED •'}
               </div>
             </div>
           </div>
@@ -409,16 +400,16 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         <div style={{ display: 'flex', background: 'var(--bg-input)', padding: 2, borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-medium)' }}>
           <button
             className={`btn btn-sm ${editorMode === 'live' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ fontSize: '0.72rem', padding: '4px 10px', height: 26, gap: 5 }}
+            style={{ fontSize: '0.72rem', padding: '3px 8px', height: 26, gap: 4 }}
             onClick={() => setEditorMode('live')}
             title="Live Interactive Block Workspace"
           >
             <Zap size={12} />
-            <span>Block Canvas</span>
+            <span>Blocks</span>
           </button>
           <button
             className={`btn btn-sm ${editorMode === 'source' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ fontSize: '0.72rem', padding: '4px 10px', height: 26, gap: 5 }}
+            style={{ fontSize: '0.72rem', padding: '3px 8px', height: 26, gap: 4 }}
             onClick={() => {
               setRawMarkdown(NotionBlockEngine.blocksToMarkdown(blocks));
               setEditorMode('source');
@@ -426,19 +417,19 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             title="Raw Markdown Source Editor"
           >
             <Code size={12} />
-            <span>Markdown</span>
+            <span>Source</span>
           </button>
         </div>
 
         {/* Right Action Tools */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+        <div className="markdown-editor-tools">
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => setShowCoverPicker(!showCoverPicker)}
             title="Change Cover Banner"
           >
             <ImageIcon size={13} />
-            <span>Cover</span>
+            <span className="hide-on-mobile-xs">Cover</span>
           </button>
 
           <button
@@ -447,7 +438,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             title="Change Icon"
           >
             <Smile size={13} />
-            <span>Icon</span>
+            <span className="hide-on-mobile-xs">Icon</span>
           </button>
 
           <button
@@ -470,10 +461,10 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => onOpenLibris(rawMarkdown)}
-              title="Ask Libris AI about this Document"
+              title="Ask Libris AI"
             >
               <Sparkles size={13} color="#8b5cf6" />
-              <span>Ask Libris</span>
+              <span className="hide-on-mobile-xs">Ask Libris</span>
             </button>
           )}
 
@@ -545,22 +536,23 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               maxWidth: 780,
               width: '100%',
               margin: '0 auto',
-              padding: isZenMode ? 'var(--space-6) var(--space-4)' : 'var(--space-8) var(--space-6)',
+              padding: isZenMode ? 'clamp(10px, 3vw, 18px)' : 'clamp(12px, 3.5vw, 28px)',
+              paddingBottom: 'calc(64px + var(--sab))',
               display: 'flex',
               flexDirection: 'column',
               flex: 1,
               boxSizing: 'border-box',
             }}
           >
-            {/* Page Header: Emoji + Title */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 'var(--space-4)' }}>
+            {/* Compact Page Header: Emoji + Title */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <div
                 style={{
-                  fontSize: '2.6rem',
+                  fontSize: '1.4rem',
                   lineHeight: 1,
                   cursor: 'pointer',
                   userSelect: 'none',
-                  marginTop: 2,
+                  flexShrink: 0,
                 }}
                 onClick={() => setShowIconPicker(true)}
                 title="Click to change icon"
@@ -568,7 +560,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 {icon}
               </div>
 
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <input
                   type="text"
                   value={title}
@@ -578,128 +570,138 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                   style={{
                     width: '100%',
                     fontFamily: 'var(--font-display)',
-                    fontSize: '2.1rem',
-                    fontWeight: 800,
-                    letterSpacing: '0.02em',
+                    fontSize: 'clamp(1.15rem, 4vw, 1.45rem)',
+                    fontWeight: 700,
+                    letterSpacing: '0.01em',
                     color: 'var(--text-primary)',
                     background: 'transparent',
                     border: 'none',
                     outline: 'none',
                     padding: 0,
                     margin: 0,
+                    boxSizing: 'border-box',
                   }}
                 />
               </div>
             </div>
 
-            {/* Properties Table */}
+            {/* Sleek Compact Inline Metadata Bar */}
             <div
-              className="card scifi-box"
               style={{
-                marginBottom: 'var(--space-5)',
-                padding: 'var(--space-3) var(--space-4)',
-                background: 'var(--bg-surface-elevated)',
-                border: '1px solid var(--border-medium)',
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 6,
+                marginBottom: 'var(--space-3)',
+                paddingBottom: 8,
+                borderBottom: '1px solid var(--border-subtle)',
+                fontSize: '0.7rem',
               }}
             >
-              <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px 12px', fontSize: 'var(--text-xs)', alignItems: 'center' }}>
-                {/* Status Property */}
-                <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-tech)', fontSize: '0.72rem' }}>STATUS</span>
-                <div style={{ position: 'relative' }}>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+              {/* Status Property */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+                  style={{
+                    padding: '2px 7px',
+                    height: 22,
+                    fontSize: '0.68rem',
+                    background: status === 'Completed' ? 'rgba(16, 185, 129, 0.15)' : status === 'In Progress' ? 'rgba(234, 179, 8, 0.15)' : 'var(--bg-input)',
+                    color: status === 'Completed' ? '#10b981' : status === 'In Progress' ? '#eab308' : 'var(--text-secondary)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-xs)',
+                    gap: 3,
+                  }}
+                >
+                  <span>{status}</span>
+                  <ChevronDown size={10} />
+                </button>
+
+                {showStatusDropdown && (
+                  <div
                     style={{
-                      padding: '2px 8px',
-                      fontSize: '0.72rem',
-                      background: status === 'Completed' ? 'rgba(16, 185, 129, 0.15)' : status === 'In Progress' ? 'rgba(234, 179, 8, 0.15)' : 'var(--bg-surface)',
-                      color: status === 'Completed' ? '#10b981' : status === 'In Progress' ? '#eab308' : 'var(--text-primary)',
-                      border: '1px solid var(--border-subtle)',
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      marginTop: 4,
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border-medium)',
+                      borderRadius: 'var(--radius-xs)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                      zIndex: 100,
+                      padding: 4,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 2,
                     }}
                   >
-                    <span>{status}</span>
-                    <ChevronDown size={11} />
-                  </button>
-
-                  {showStatusDropdown && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: '100%',
-                        left: 0,
-                        marginTop: 4,
-                        background: 'var(--bg-card)',
-                        border: '1px solid var(--border-medium)',
-                        borderRadius: 'var(--radius-xs)',
-                        boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                        zIndex: 100,
-                        padding: 4,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 2,
-                      }}
-                    >
-                      {STATUS_PRESETS.map(s => (
-                        <button
-                          key={s}
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          style={{ textAlign: 'left', fontSize: '0.72rem' }}
-                          onClick={() => {
-                            setStatus(s);
-                            setShowStatusDropdown(false);
-                          }}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Tags Property */}
-                <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-tech)', fontSize: '0.72rem' }}>TAGS</span>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                  {parsed.tags.map(t => (
-                    <span key={t} className="badge">
-                      #{t}
-                    </span>
-                  ))}
-                  {showTagInput ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <input
-                        type="text"
-                        placeholder="tag..."
-                        value={newTagInput}
-                        onChange={e => setNewTagInput(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && handleAddTag()}
-                        style={{ width: 80, height: 22, fontSize: '0.7rem', padding: '0 4px' }}
-                        autoFocus
-                      />
-                      <button className="btn-icon btn-sm" onClick={handleAddTag} style={{ width: 20, height: 20 }}>
-                        <Check size={11} />
+                    {STATUS_PRESETS.map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ textAlign: 'left', fontSize: '0.7rem' }}
+                        onClick={() => {
+                          setStatus(s);
+                          setShowStatusDropdown(false);
+                        }}
+                      >
+                        {s}
                       </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      style={{ padding: '0 6px', height: 20, fontSize: '0.68rem' }}
-                      onClick={() => setShowTagInput(true)}
-                    >
-                      <Plus size={10} />
-                      <span>Add tag</span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Reading Stats */}
-                <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-tech)', fontSize: '0.72rem' }}>READING TIME</span>
-                <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-tech)', fontSize: '0.72rem' }}>
-                  {wordsCount} words • ~{readingTimeMin} min read
-                </span>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* Tags Property */}
+              {parsed.tags.map(t => (
+                <span key={t} className="badge" style={{ fontSize: '0.65rem', padding: '1px 5px' }}>
+                  #{t}
+                </span>
+              ))}
+
+              {showTagInput ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <input
+                    type="text"
+                    placeholder="tag..."
+                    value={newTagInput}
+                    onChange={e => setNewTagInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleAddTag()}
+                    style={{
+                      width: 70,
+                      height: 20,
+                      fontSize: '0.65rem',
+                      padding: '0 4px',
+                      background: 'var(--bg-input)',
+                      border: '1px solid var(--border-subtle)',
+                      color: 'var(--text-primary)',
+                      borderRadius: 'var(--radius-xs)',
+                    }}
+                    autoFocus
+                  />
+                  <button className="btn-icon btn-sm" onClick={handleAddTag} style={{ width: 20, height: 20 }}>
+                    <Check size={10} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ padding: '0 5px', height: 20, fontSize: '0.65rem', gap: 2 }}
+                  onClick={() => setShowTagInput(true)}
+                >
+                  <Plus size={10} />
+                  <span>Tag</span>
+                </button>
+              )}
+
+              {/* Reading Stats */}
+              <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-tech)', fontSize: '0.65rem', marginLeft: 'auto' }}>
+                {wordsCount}w • ~{readingTimeMin}m
+              </span>
             </div>
 
             {/* LIVE BLOCK CANVAS MODE */}
@@ -731,11 +733,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
-                    padding: '8px 0 8px 46px',
+                    padding: '8px 4px',
                     color: 'var(--text-muted)',
                     cursor: 'pointer',
-                    fontSize: '0.8rem',
-                    opacity: 0.5,
+                    fontSize: '0.75rem',
+                    opacity: 0.6,
                     transition: 'opacity 0.15s ease',
                   }}
                   onClick={() => {
@@ -744,9 +746,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                     setFocusedIndex(blocks.length);
                   }}
                   onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
-                  onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.5')}
+                  onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.6')}
                 >
-                  <Plus size={14} />
+                  <Plus size={13} />
                   <span>Click to add a block, or type /</span>
                 </div>
               </div>
@@ -782,127 +784,279 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           </div>
         </main>
 
-        {/* Backlinks & Knowledge Inspector Sidebar */}
+        {/* Backlinks & Knowledge Inspector Sidebar (Desktop Docked or Mobile Drawer) */}
         {showInspector && !isZenMode && (
-          <aside
-            style={{
-              width: 270,
-              background: 'var(--bg-surface-elevated)',
-              borderLeft: '1px solid var(--border-subtle)',
-              display: 'flex',
-              flexDirection: 'column',
-              height: '100%',
-              overflow: 'hidden',
-              flexShrink: 0,
-            }}
-          >
+          <>
             <div
+              className="mobile-drawer-backdrop"
+              onClick={() => setShowInspector(false)}
+            />
+            <aside
               style={{
-                padding: '10px 14px',
-                borderBottom: '1px solid var(--border-subtle)',
-                background: 'var(--bg-surface)',
-                fontFamily: 'var(--font-tech)',
-                fontWeight: 600,
-                fontSize: 'var(--text-2xs)',
-                letterSpacing: '0.05em',
-                color: 'var(--text-secondary)',
+                width: 270,
+                maxWidth: '85vw',
+                background: 'var(--bg-surface-elevated)',
+                borderLeft: '1px solid var(--border-subtle)',
                 display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
+                flexDirection: 'column',
+                height: '100%',
+                overflow: 'hidden',
+                flexShrink: 0,
+                zIndex: 90,
               }}
             >
-              <span>KNOWLEDGE LINKS</span>
-              <span className="badge">{parsed.wikilinks.length + backlinksList.length}</span>
-            </div>
-
-            <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-              {/* Outgoing Wikilinks */}
-              <div>
-                <div className="form-label" style={{ marginBottom: 6 }}>
-                  OUTGOING LINKS ({parsed.wikilinks.length})
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-surface)',
+                  fontFamily: 'var(--font-tech)',
+                  fontWeight: 600,
+                  fontSize: 'var(--text-2xs)',
+                  letterSpacing: '0.05em',
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <span>KNOWLEDGE LINKS</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span className="badge">{parsed.wikilinks.length + backlinksList.length}</span>
+                  <button
+                    className="btn-icon btn-sm"
+                    onClick={() => setShowInspector(false)}
+                    style={{ width: 22, height: 22 }}
+                    title="Close"
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
-                {parsed.wikilinks.length === 0 ? (
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>No outgoing [[links]]</span>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    {parsed.wikilinks.map(link => (
-                      <div
-                        key={link}
-                        onClick={() => onNavigateNote && onNavigateNote(link)}
-                        style={{
-                          padding: '5px 8px',
-                          background: 'var(--bg-surface)',
-                          border: '1px solid var(--border-subtle)',
-                          borderRadius: 'var(--radius-xs)',
-                          fontSize: 'var(--text-xs)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          color: 'var(--text-primary)',
-                        }}
-                        className="card-interactive"
-                      >
-                        <ExternalLink size={11} style={{ opacity: 0.6 }} />
-                        <span style={{ fontWeight: 600 }}>[[{link}]]</span>
-                      </div>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                {/* Outgoing Wikilinks */}
+                <div>
+                  <div className="form-label" style={{ marginBottom: 6 }}>
+                    OUTGOING LINKS ({parsed.wikilinks.length})
+                  </div>
+                  {parsed.wikilinks.length === 0 ? (
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>No outgoing [[links]]</span>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {parsed.wikilinks.map(link => (
+                        <div
+                          key={link}
+                          onClick={() => {
+                            setShowInspector(false);
+                            onNavigateNote && onNavigateNote(link);
+                          }}
+                          style={{
+                            padding: '5px 8px',
+                            background: 'var(--bg-surface)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-xs)',
+                            fontSize: 'var(--text-xs)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            color: 'var(--text-primary)',
+                          }}
+                          className="card-interactive"
+                        >
+                          <ExternalLink size={11} style={{ opacity: 0.6 }} />
+                          <span style={{ fontWeight: 600 }}>[[{link}]]</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Backlinks */}
+                <div>
+                  <div className="form-label" style={{ marginBottom: 6 }}>
+                    BACKLINKS ({backlinksList.length})
+                  </div>
+                  {backlinksList.length === 0 ? (
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>No backlinks referencing this note</span>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {backlinksList.map(b => (
+                        <div
+                          key={b.id}
+                          onClick={() => {
+                            setShowInspector(false);
+                            onNavigateNote && onNavigateNote(b.id);
+                          }}
+                          style={{
+                            padding: '6px 8px',
+                            background: 'var(--bg-surface)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-xs)',
+                            fontSize: 'var(--text-xs)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 1,
+                          }}
+                          className="card-interactive"
+                        >
+                          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{b.title}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-tech)' }}>
+                            mentions [[{note.title}]]
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Tags */}
+                <div>
+                  <div className="form-label" style={{ marginBottom: 6 }}>
+                    TAGS ({parsed.tags.length})
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {parsed.tags.map(tag => (
+                      <span key={tag} className="badge">
+                        #{tag}
+                      </span>
                     ))}
                   </div>
-                )}
-              </div>
-
-              {/* Backlinks */}
-              <div>
-                <div className="form-label" style={{ marginBottom: 6 }}>
-                  BACKLINKS ({backlinksList.length})
-                </div>
-                {backlinksList.length === 0 ? (
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>No backlinks referencing this note</span>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    {backlinksList.map(b => (
-                      <div
-                        key={b.id}
-                        onClick={() => onNavigateNote && onNavigateNote(b.id)}
-                        style={{
-                          padding: '6px 8px',
-                          background: 'var(--bg-surface)',
-                          border: '1px solid var(--border-subtle)',
-                          borderRadius: 'var(--radius-xs)',
-                          fontSize: 'var(--text-xs)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 1,
-                        }}
-                        className="card-interactive"
-                      >
-                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{b.title}</span>
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-tech)' }}>
-                          mentions [[{note.title}]]
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Tags */}
-              <div>
-                <div className="form-label" style={{ marginBottom: 6 }}>
-                  TAGS ({parsed.tags.length})
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                  {parsed.tags.map(tag => (
-                    <span key={tag} className="badge">
-                      #{tag}
-                    </span>
-                  ))}
                 </div>
               </div>
-            </div>
-          </aside>
+            </aside>
+          </>
         )}
+      </div>
+
+      {/* Mobile Bottom Dock Toolbar for Android / iOS */}
+      <div className="notion-mobile-dock">
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost"
+          onClick={() => {
+            const newBlock = NotionBlockEngine.createBlock('text', '');
+            const targetIdx = focusedIndex !== null ? focusedIndex + 1 : blocks.length;
+            const newBlocks = [...blocks];
+            newBlocks.splice(targetIdx, 0, newBlock);
+            setBlocks(newBlocks);
+            setFocusedIndex(targetIdx);
+          }}
+          title="Add Block"
+          style={{ padding: '0 8px', height: 32, fontSize: '0.72rem', gap: 4 }}
+        >
+          <Plus size={14} />
+          <span>Block</span>
+        </button>
+
+        <div style={{ width: 1, height: 18, background: 'var(--border-strong)', margin: '0 2px' }} />
+
+        <button
+          type="button"
+          className="btn-icon btn-sm btn-ghost"
+          onClick={() => {
+            if (focusedIndex !== null && blocks[focusedIndex]) {
+              handleUpdateBlock(focusedIndex, { ...blocks[focusedIndex], type: 'h1' });
+            }
+          }}
+          title="Heading 1"
+          style={{ width: 30, height: 30 }}
+        >
+          <span style={{ fontWeight: 800, fontSize: '0.75rem' }}>H1</span>
+        </button>
+
+        <button
+          type="button"
+          className="btn-icon btn-sm btn-ghost"
+          onClick={() => {
+            if (focusedIndex !== null && blocks[focusedIndex]) {
+              handleUpdateBlock(focusedIndex, { ...blocks[focusedIndex], type: 'h2' });
+            }
+          }}
+          title="Heading 2"
+          style={{ width: 30, height: 30 }}
+        >
+          <span style={{ fontWeight: 700, fontSize: '0.72rem' }}>H2</span>
+        </button>
+
+        <button
+          type="button"
+          className="btn-icon btn-sm btn-ghost"
+          onClick={() => {
+            if (focusedIndex !== null && blocks[focusedIndex]) {
+              handleUpdateBlock(focusedIndex, { ...blocks[focusedIndex], type: 'bullet' });
+            }
+          }}
+          title="Bullet List"
+          style={{ width: 30, height: 30 }}
+        >
+          <span style={{ fontSize: '1rem', lineHeight: 1 }}>•</span>
+        </button>
+
+        <button
+          type="button"
+          className="btn-icon btn-sm btn-ghost"
+          onClick={() => {
+            if (focusedIndex !== null && blocks[focusedIndex]) {
+              handleUpdateBlock(focusedIndex, {
+                ...blocks[focusedIndex],
+                type: 'todo',
+                properties: { checked: false },
+              });
+            }
+          }}
+          title="Todo Task"
+          style={{ width: 30, height: 30 }}
+        >
+          <Check size={14} />
+        </button>
+
+        <button
+          type="button"
+          className="btn-icon btn-sm btn-ghost"
+          onClick={() => {
+            if (focusedIndex !== null && blocks[focusedIndex]) {
+              handleUpdateBlock(focusedIndex, {
+                ...blocks[focusedIndex],
+                type: 'callout',
+                properties: { icon: '💡', calloutType: 'tip' },
+              });
+            }
+          }}
+          title="Callout Box"
+          style={{ width: 30, height: 30 }}
+        >
+          <span style={{ fontSize: '0.85rem' }}>💡</span>
+        </button>
+
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost"
+          onClick={() => {
+            const activeIdx = focusedIndex !== null ? focusedIndex : 0;
+            handleOpenSlashMenu(activeIdx, { top: window.innerHeight / 2 - 100, left: window.innerWidth / 2 - 140 } as any);
+          }}
+          title="Open Slash Commands Menu"
+          style={{ padding: '0 8px', height: 32, fontSize: '0.72rem', gap: 4 }}
+        >
+          <Zap size={13} color="#ec4899" />
+          <span>/</span>
+        </button>
+
+        <div style={{ flex: 1 }} />
+
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          onClick={() => handleSave()}
+          title="Save Note"
+          style={{ padding: '0 10px', height: 30, fontSize: '0.72rem', gap: 4 }}
+        >
+          <Save size={13} />
+          <span>Save</span>
+        </button>
       </div>
 
       {/* Floating Slash Command Menu */}
@@ -918,10 +1072,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       {showCoverPicker && (
         <div
           style={{
-            position: 'absolute',
-            top: 50,
-            right: 80,
-            width: 280,
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 'min(300px, 90vw)',
             background: 'var(--bg-card)',
             border: '1px solid var(--border-medium)',
             borderRadius: 'var(--radius-sm)',
@@ -971,10 +1126,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       {showIconPicker && (
         <div
           style={{
-            position: 'absolute',
-            top: 50,
-            right: 40,
-            width: 260,
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 'min(280px, 90vw)',
             background: 'var(--bg-card)',
             border: '1px solid var(--border-medium)',
             borderRadius: 'var(--radius-sm)',

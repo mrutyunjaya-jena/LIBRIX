@@ -608,8 +608,16 @@ export class GoogleDriveProvider implements IStorageProvider {
   /** Authenticated request helper with automatic single 401-refresh-retry. */
   private async makeRequest(url: string, options: RequestInit = {}, isRetry = false): Promise<Response> {
     if (!this.tokens?.accessToken) {
-      this.updateStatus('reconnect_required', { lastError: 'No access token available.' });
-      throw new Error('Google Drive is not authenticated. Please reconnect.');
+      if (this.tokens?.refreshToken) {
+        const refreshed = await this.attemptTokenRefresh(this.tokens.refreshToken);
+        if (!refreshed || !this.tokens?.accessToken) {
+          this.updateStatus('reconnect_required', { lastError: 'No access token available and refresh failed.' });
+          throw new Error('Google Drive is not authenticated. Please reconnect.');
+        }
+      } else {
+        this.updateStatus('reconnect_required', { lastError: 'No access token available.' });
+        throw new Error('Google Drive is not authenticated. Please reconnect.');
+      }
     }
 
     const headers = new Headers(options.headers || {});
@@ -707,32 +715,43 @@ export class GoogleDriveProvider implements IStorageProvider {
     };
   }
 
-  async listFiles(folderPath = '/LIBRIX'): Promise<StorageItem[]> {
+  async listFiles(folderPath = ''): Promise<StorageItem[]> {
     if (!this.isConnected()) return [];
     try {
-      let parentQuery = '';
-      if (folderPath && folderPath !== '/' && folderPath !== 'root') {
+      let queryStr = '';
+
+      if (folderPath && folderPath !== '/' && folderPath !== 'root' && folderPath !== 'all') {
         const parentId = await this.getOrCreateFolderPath(folderPath);
-        if (!parentId) return []; // Folder does not exist, return empty
-        parentQuery = `'${parentId}' in parents and `;
-      } else {
-        const rootVaultId = await this.getOrCreateFolderPath('/LIBRIX');
-        if (rootVaultId) {
-          parentQuery = `'${rootVaultId}' in parents and `;
-        } else {
-          parentQuery = "'root' in parents and ";
+        if (parentId) {
+          queryStr = `'${parentId}' in parents and trashed = false`;
         }
       }
 
-      const query = encodeURIComponent(
-        `${parentQuery}trashed = false`
-      );
+      // If no folder path specified or querying all, search across entire Google Drive for all books/docs
+      if (!queryStr) {
+        queryStr = "trashed = false and mimeType != 'application/vnd.google-apps.folder' and (mimeType = 'application/pdf' or mimeType = 'application/epub+zip' or mimeType = 'text/plain' or mimeType = 'text/markdown' or name contains '.pdf' or name contains '.epub' or name contains '.md' or name contains '.mobi' or name contains '.txt')";
+      }
+
       const res = await this.makeRequest(
-        `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType,size,modifiedTime)&pageSize=100`
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(queryStr)}&fields=files(id,name,mimeType,size,modifiedTime)&pageSize=200`
       );
+
       if (res.ok) {
         const data = await res.json();
-        return (data.files || []).map((f: any) => this.mapDriveFile(f));
+        const files = (data.files || []).map((f: any) => this.mapDriveFile(f));
+        if (files.length > 0) return files;
+      }
+
+      // Fallback: If specific folder had 0 items, search whole drive for all documents
+      if (folderPath && folderPath !== 'all') {
+        const fallbackQuery = "trashed = false and mimeType != 'application/vnd.google-apps.folder' and (mimeType = 'application/pdf' or mimeType = 'application/epub+zip' or mimeType = 'text/plain' or name contains '.pdf' or name contains '.epub' or name contains '.md')";
+        const fallbackRes = await this.makeRequest(
+          `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(fallbackQuery)}&fields=files(id,name,mimeType,size,modifiedTime)&pageSize=200`
+        );
+        if (fallbackRes.ok) {
+          const fbData = await fallbackRes.json();
+          return (fbData.files || []).map((f: any) => this.mapDriveFile(f));
+        }
       }
     } catch (err) {
       console.warn('Google Drive listFiles failed:', err instanceof Error ? err.message : err);
@@ -748,10 +767,77 @@ export class GoogleDriveProvider implements IStorageProvider {
     throw new Error(`Google Drive file not found: ${itemPath}`);
   }
 
-  async download(itemPath: string): Promise<Uint8Array> {
-    const res = await this.makeRequest(`https://www.googleapis.com/drive/v3/files/${itemPath}?alt=media`);
-    if (res.ok) return new Uint8Array(await res.arrayBuffer());
-    throw new Error(`Google Drive download failed with HTTP ${res.status}.`);
+  async download(itemPath: string, hintFilename?: string): Promise<Uint8Array> {
+    let fileId = itemPath;
+    let targetName = hintFilename || (itemPath.includes('/') ? itemPath.split('/').pop() : undefined);
+
+    // 1. Direct file ID download if fileId looks like a Google Drive ID (not internal doc_ id and not a path)
+    if (fileId && !fileId.startsWith('doc_') && !fileId.startsWith('note_') && !fileId.includes('/')) {
+      try {
+        const res = await this.makeRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`);
+        if (res.ok) {
+          const buffer = await res.arrayBuffer();
+          if (buffer.byteLength > 0) return new Uint8Array(buffer);
+        }
+      } catch (directErr) {
+        console.warn(`[LIBRIX::GoogleDrive] Direct download by ID "${fileId}" failed:`, directErr);
+      }
+    }
+
+    // 2. If itemPath is a POSIX path like /LIBRIX/Library/book.epub, resolve the actual Google Drive File ID
+    if (fileId.includes('/') || fileId.startsWith('/')) {
+      const fileName = itemPath.split('/').pop() || itemPath;
+      targetName = fileName;
+      const folderPath = itemPath.substring(0, itemPath.lastIndexOf('/'));
+      try {
+        const folderId = await this.getOrCreateFolderPath(folderPath);
+        const parentQuery = folderId ? `'${folderId}' in parents and ` : '';
+        const escapedName = fileName.replace(/'/g, "\\'");
+        const q = `${parentQuery}trashed = false and name = '${escapedName}'`;
+        const res = await this.makeRequest(
+          `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name)`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.files && data.files.length > 0) {
+            const dlRes = await this.makeRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(data.files[0].id)}?alt=media`);
+            if (dlRes.ok) {
+              const buffer = await dlRes.arrayBuffer();
+              return new Uint8Array(buffer);
+            }
+          }
+        }
+      } catch (pathErr) {
+        console.warn(`[LIBRIX::GoogleDrive] Could not resolve file ID for path "${itemPath}":`, pathErr);
+      }
+    }
+
+    // 3. Fallback: Search across the entire Google Drive by target filename or title
+    if (targetName) {
+      const cleanName = targetName.replace(/['’]/g, '');
+      const escapedName = targetName.replace(/'/g, "\\'");
+      const q = `trashed = false and (name = '${escapedName}' or name contains '${cleanName}')`;
+      try {
+        const searchRes = await this.makeRequest(
+          `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name)&pageSize=10`
+        );
+        if (searchRes.ok) {
+          const data = await searchRes.json();
+          if (data.files && data.files.length > 0) {
+            const foundFile = data.files[0];
+            const retryRes = await this.makeRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(foundFile.id)}?alt=media`);
+            if (retryRes.ok) {
+              const buffer = await retryRes.arrayBuffer();
+              return new Uint8Array(buffer);
+            }
+          }
+        }
+      } catch (searchErr) {
+        console.warn(`[LIBRIX::GoogleDrive] Global search fallback for "${targetName}" error:`, searchErr);
+      }
+    }
+
+    throw new Error(`Google Drive could not locate or download file "${targetName || itemPath}".`);
   }
 
   private folderCache = new Map<string, string>();
@@ -847,6 +933,53 @@ export class GoogleDriveProvider implements IStorageProvider {
   async upload(folderPath: string, filename: string, data: Uint8Array, mimeType?: string): Promise<StorageItem> {
     const parentId = await this.getOrCreateFolderPath(folderPath);
     const resolvedMime = mimeType || 'application/octet-stream';
+
+    // 1. Check if a file with this name already exists in this folder to avoid creating duplicate files
+    let existingFileId: string | null = null;
+    try {
+      const parentQuery = (parentId && parentId !== 'root') ? `'${parentId}' in parents and ` : "'root' in parents and ";
+      const escapedName = filename.replace(/'/g, "\\'");
+      const q = `${parentQuery}trashed = false and name = '${escapedName}'`;
+      const searchRes = await this.makeRequest(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name)`
+      );
+      if (searchRes.ok) {
+        const data = await searchRes.json();
+        if (data.files && data.files.length > 0) {
+          existingFileId = data.files[0].id;
+        }
+      }
+    } catch {
+      // search fallback
+    }
+
+    // 2. If file already exists, UPDATE (PATCH) its content directly instead of creating duplicates!
+    if (existingFileId) {
+      const patchRes = await this.makeRequest(
+        `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingFileId)}?uploadType=media`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': resolvedMime },
+          body: data as unknown as BodyInit,
+        }
+      );
+      if (patchRes.ok) {
+        const file = await patchRes.json().catch(() => ({ id: existingFileId, name: filename }));
+        return {
+          id: file.id || existingFileId,
+          name: file.name || filename,
+          path: file.id || existingFileId,
+          size: data.length,
+          isDirectory: false,
+          mimeType: resolvedMime,
+          modifiedAt: Date.now(),
+          providerType: 'gdrive',
+          providerId: this.id,
+        };
+      }
+    }
+
+    // 3. Otherwise create the new file using multipart POST
     const metadata: any = {
       name: filename,
       mimeType: resolvedMime,

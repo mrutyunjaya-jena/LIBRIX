@@ -95,7 +95,7 @@ export interface Bookmark {
   createdAt: number;
 }
 
-export type HighlightStyle = 'underline' | 'box' | 'filled';
+export type HighlightStyle = 'underline' | 'box' | 'filled' | 'highlight' | 'comment';
 
 export interface Annotation {
   id: string;

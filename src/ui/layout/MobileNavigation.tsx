@@ -14,18 +14,7 @@ export const MobileNavigation: React.FC<MobileNavigationProps> = ({
   onOpenLibris,
 }) => {
   return (
-    <nav
-      style={{
-        height: 56,
-        background: 'var(--bg-surface-elevated)',
-        borderTop: '1px solid var(--border-subtle)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-around',
-        padding: '0 var(--space-2)',
-        zIndex: 50,
-      }}
-    >
+    <nav className="app-adaptive-bottom-nav">
       <button
         className="btn-ghost"
         onClick={() => onSelectTab('library')}
@@ -33,13 +22,18 @@ export const MobileNavigation: React.FC<MobileNavigationProps> = ({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: 2,
+          justifyContent: 'center',
+          gap: 3,
           color: activeTab === 'library' ? 'var(--text-primary)' : 'var(--text-muted)',
-          fontSize: '0.68rem',
+          fontSize: '0.65rem',
+          fontFamily: 'var(--font-sans)',
+          minWidth: 48,
+          minHeight: 44,
+          padding: '4px 2px',
         }}
       >
-        <BookOpen size={17} />
-        <span>Library</span>
+        <BookOpen size={18} />
+        <span style={{ fontWeight: activeTab === 'library' ? 600 : 400 }}>Library</span>
       </button>
 
       <button
@@ -49,22 +43,28 @@ export const MobileNavigation: React.FC<MobileNavigationProps> = ({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: 2,
+          justifyContent: 'center',
+          gap: 3,
           color: activeTab === 'notes' ? 'var(--text-primary)' : 'var(--text-muted)',
-          fontSize: '0.68rem',
+          fontSize: '0.65rem',
+          fontFamily: 'var(--font-sans)',
+          minWidth: 48,
+          minHeight: 44,
+          padding: '4px 2px',
         }}
       >
-        <FileText size={17} />
-        <span>Notes</span>
+        <FileText size={18} />
+        <span style={{ fontWeight: activeTab === 'notes' ? 600 : 400 }}>Notes</span>
       </button>
 
-      {/* Floating Center Libris Trigger */}
+      {/* Floating Center Libris AI Trigger */}
       {onOpenLibris && (
         <button
           onClick={onOpenLibris}
+          title="Ask Libris AI"
           style={{
-            width: 42,
-            height: 42,
+            width: 44,
+            height: 44,
             borderRadius: '50%',
             background: 'var(--btn-primary-bg)',
             color: 'var(--btn-primary-text)',
@@ -72,8 +72,10 @@ export const MobileNavigation: React.FC<MobileNavigationProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             boxShadow: 'var(--shadow-md)',
-            transform: 'translateY(-8px)',
-            border: '2px solid var(--bg-surface-elevated)',
+            transform: 'translateY(-10px)',
+            border: '3px solid var(--bg-surface-elevated)',
+            cursor: 'pointer',
+            flexShrink: 0,
           }}
         >
           <Sparkles size={18} />
@@ -82,34 +84,44 @@ export const MobileNavigation: React.FC<MobileNavigationProps> = ({
 
       <button
         className="btn-ghost"
-        onClick={() => onSelectTab('graph')}
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 2,
-          color: activeTab === 'graph' ? 'var(--text-primary)' : 'var(--text-muted)',
-          fontSize: '0.68rem',
-        }}
-      >
-        <Share2 size={17} />
-        <span>Graph</span>
-      </button>
-
-      <button
-        className="btn-ghost"
         onClick={() => onSelectTab('cloud')}
         style={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: 2,
+          justifyContent: 'center',
+          gap: 3,
           color: activeTab === 'cloud' ? 'var(--text-primary)' : 'var(--text-muted)',
-          fontSize: '0.68rem',
+          fontSize: '0.65rem',
+          fontFamily: 'var(--font-sans)',
+          minWidth: 48,
+          minHeight: 44,
+          padding: '4px 2px',
         }}
       >
-        <Cloud size={17} />
-        <span>Clouds</span>
+        <Cloud size={18} />
+        <span style={{ fontWeight: activeTab === 'cloud' ? 600 : 400 }}>Clouds</span>
+      </button>
+
+      <button
+        className="btn-ghost"
+        onClick={() => onSelectTab('settings')}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 3,
+          color: activeTab === 'settings' ? 'var(--text-primary)' : 'var(--text-muted)',
+          fontSize: '0.65rem',
+          fontFamily: 'var(--font-sans)',
+          minWidth: 48,
+          minHeight: 44,
+          padding: '4px 2px',
+        }}
+      >
+        <Settings size={18} />
+        <span style={{ fontWeight: activeTab === 'settings' ? 600 : 400 }}>Settings</span>
       </button>
     </nav>
   );
