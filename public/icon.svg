@@ -1,21 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108">
-  <rect width="108" height="108" rx="24" fill="#09090B"/>
-  <!-- Outer Subtle Frame -->
-  <rect x="26" y="26" width="56" height="56" rx="8" fill="none" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="1.5"/>
-  <!-- Left Book Wing -->
-  <path d="M51 41.5 L34 35.5 C32.3 34.9 30.5 36.2 30.5 38 L30.5 69 C30.5 70.4 31.8 71.5 33.2 71.8 L51 75.5 Z" fill="#FFFFFF"/>
-  <!-- Right Book Wing -->
-  <path d="M57 41.5 L74 35.5 C75.7 34.9 77.5 36.2 77.5 38 L77.5 69 C77.5 70.4 76.2 71.5 74.8 71.8 L57 75.5 Z" fill="#FFFFFF"/>
-  <!-- Left Wing Cutout -->
-  <path d="M48.5 45.5 L36 41 C35.2 40.7 34.5 41.3 34.5 42.2 L34.5 65.5 C34.5 66.2 35.1 66.8 35.8 67 L48.5 69.5 Z" fill="#09090B"/>
-  <!-- Right Wing Cutout -->
-  <path d="M59.5 45.5 L72 41 C72.8 40.7 73.5 41.3 73.5 42.2 L73.5 65.5 C73.5 66.2 72.9 66.8 72.2 67 L59.5 69.5 Z" fill="#09090B"/>
-  <!-- Center Diamond -->
-  <path d="M54 32 L60.5 43 L54 54 L47.5 43 Z" fill="#FFFFFF"/>
-  <!-- Diamond Inner Core -->
-  <path d="M54 37 L57.5 43 L54 49 L50.5 43 Z" fill="#09090B"/>
-  <!-- Diamond Sparkle -->
-  <path d="M54 41 L55.5 43 L54 45 L52.5 43 Z" fill="#FFFFFF"/>
-  <!-- Bottom Center Pillar -->
-  <path d="M54 61 L58 68 L54 76 L50 68 Z" fill="#FFFFFF"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#121216" />
+      <stop offset="100%" stop-color="#09090B" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="512" height="512" rx="115" fill="url(#bgGrad)" />
+  <rect width="508" height="508" x="2" y="2" rx="113" fill="none" stroke="#27272A" stroke-width="2" />
+
+  <!-- Transformed Cyber Book & Spark Geometry scaled to 512x512 -->
+  <g transform="translate(256, 256) scale(4.2) translate(-54, -54)">
+    <!-- Outer Knowledge Halo / Frame -->
+    <rect x="26" y="26" width="56" height="56" rx="8" fill="none" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="1.5" />
+
+    <!-- Left Book Wing (White) -->
+    <path d="M51,41.5 L34,35.5 C32.3,34.9 30.5,36.2 30.5,38 L30.5,69 C30.5,70.4 31.8,71.5 33.2,71.8 L51,75.5 Z" fill="#FFFFFF" />
+
+    <!-- Right Book Wing (White) -->
+    <path d="M57,41.5 L74,35.5 C75.7,34.9 77.5,36.2 77.5,38 L77.5,69 C77.5,70.4 76.2,71.5 74.8,71.8 L57,75.5 Z" fill="#FFFFFF" />
+
+    <!-- Left Wing Cutout (Black) -->
+    <path d="M48.5,45.5 L36,41 C35.2,40.7 34.5,41.3 34.5,42.2 L34.5,65.5 C34.5,66.2 35.1,66.8 35.8,67 L48.5,69.5 Z" fill="#09090B" />
+
+    <!-- Right Wing Cutout (Black) -->
+    <path d="M59.5,45.5 L72,41 C72.8,40.7 73.5,41.3 73.5,42.2 L73.5,65.5 C73.5,66.2 72.9,66.8 72.2,67 L59.5,69.5 Z" fill="#09090B" />
+
+    <!-- Center Floating Diamond Spark / Crystal of Knowledge (White) -->
+    <polygon points="54,32 60.5,43 54,54 47.5,43" fill="#FFFFFF" />
+
+    <!-- Center Diamond Inner Core (Black) -->
+    <polygon points="54,37 57.5,43 54,49 50.5,43" fill="#09090B" />
+
+    <!-- Center Core Sparkle (White) -->
+    <polygon points="54,41 55.5,43 54,45 52.5,43" fill="#FFFFFF" />
+
+    <!-- Bottom Center Pillar (White) -->
+    <polygon points="54,61 58,68 54,76 50,68" fill="#FFFFFF" />
+  </g>
 </svg>

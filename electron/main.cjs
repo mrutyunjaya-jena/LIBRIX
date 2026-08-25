@@ -12,7 +12,9 @@ if (process.platform === 'linux') {
 let mainWindow;
 
 function createWindow() {
-  const iconPath = path.join(app.getAppPath(), 'public/icon.png');
+  const iconPath = process.platform === 'win32'
+    ? path.join(__dirname, '../public/icon.ico')
+    : path.join(__dirname, '../public/icon.png');
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -21,7 +23,7 @@ function createWindow() {
     minHeight: 600,
     title: 'LIBRIX',
     backgroundColor: '#09090b',
-    icon: path.join(__dirname, '../public/icon.png'),
+    icon: iconPath,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
