@@ -21,14 +21,15 @@ function createWindow() {
     minHeight: 600,
     title: 'LIBRIX',
     backgroundColor: '#09090b',
-    icon: iconPath,
+    icon: path.join(__dirname, '../public/icon.png'),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
-      webSecurity: true,
+      webSecurity: false, // Ensures local PDF.js workers and SQLite WASM load properly under file://
+      allowRunningInsecureContent: false,
     },
     autoHideMenuBar: true,
   });
@@ -43,15 +44,14 @@ function createWindow() {
     if (mainWindow && !mainWindow.isVisible()) {
       mainWindow.show();
     }
-  }, 400);
+  }, 500);
 
   // Load the built Vite production app or local dev server
   const isDev = !app.isPackaged && process.env.NODE_ENV === 'development';
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
-    const indexPath = path.join(app.getAppPath(), 'dist/index.html');
-    mainWindow.loadFile(indexPath);
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
   // Open external URLs in the user's default browser

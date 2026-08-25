@@ -12,8 +12,8 @@
     "android": "npx cap sync android && npx cap open android",
     "build:android": "npm run build && npx cap sync android",
     "build:linux": "npm run build && electron-builder --linux AppImage tar.gz",
-    "build:win": "npm run build && electron-builder --win nsis portable",
-    "build:all": "npm run build && electron-builder --linux AppImage tar.gz --win nsis portable"
+    "build:win": "npm run build && electron-builder --win dir zip",
+    "build:all": "npm run build && electron-builder --linux AppImage tar.gz --win dir zip"
   },
   "build": {
     "appId": "com.librix.app",
@@ -38,8 +38,8 @@
     },
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        "dir",
+        "zip"
       ],
       "icon": "public/icon.png"
     },
