@@ -1633,25 +1633,25 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
       {/* POPULAR ONE-CLICK & CUSTOM CLOUD MODAL */}
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: 520 }}>
-            <div className="modal-header">
-              <h3 className="modal-title">
+          <div className="modal-content" style={{ maxWidth: 520, width: 'min(520px, 94vw)', maxHeight: '90vh', overflowY: 'auto', padding: 'clamp(12px, 3vw, 20px)' }}>
+            <div className="modal-header" style={{ marginBottom: 12 }}>
+              <h3 className="modal-title" style={{ fontSize: 'clamp(0.95rem, 3.5vw, 1.15rem)' }}>
                 {isCustomWizard ? `Custom Cloud Setup (Step ${wizardStep} of 3)` : 'Add Storage Provider'}
               </h3>
               <button className="btn-icon btn-sm" onClick={() => setShowAddModal(false)}>✕</button>
             </div>
 
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
               {!isCustomWizard ? (
                 <>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                     Connect built-in popular cloud providers with one click or configure your own custom endpoint.
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 'var(--space-3)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 'var(--space-2)' }}>
                     <button
                       className={`card scifi-box ${selectedPopularType === 'gdrive' ? 'active' : ''}`}
-                      style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left' }}
+                      style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left' }}
                       onClick={() => setSelectedPopularType('gdrive')}
                     >
                       <Cloud size={20} />
@@ -1663,12 +1663,12 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                   </div>
 
                   {selectedPopularType && (
-                    <div style={{ background: 'var(--bg-input)', padding: 'var(--space-4)', borderRadius: 'var(--radius-xs)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                    <div style={{ background: 'var(--bg-input)', padding: 'clamp(10px, 3vw, 14px)', borderRadius: 'var(--radius-xs)', display: 'flex', flexDirection: 'column', gap: 10 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, fontFamily: 'var(--font-display)', letterSpacing: '0.03em' }}>
                           CONNECT GOOGLE DRIVE
                         </span>
-                        <span className="badge">OFFICIAL REST v3</span>
+                        <span className="badge" style={{ fontSize: '0.62rem' }}>OFFICIAL REST v3</span>
                       </div>
 
                       {connectingStatus && (
@@ -1700,29 +1700,58 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
 
                       {selectedPopularType === 'gdrive' ? (
                         <>
-                          {/* Segmented Mode Selector */}
-                          <div style={{ display: 'flex', gap: 6, background: 'var(--bg-surface)', padding: 4, borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+                          {/* Sleek Low-Profile Segmented Mode Selector */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              background: 'var(--bg-surface)',
+                              padding: 2,
+                              borderRadius: 'var(--radius-xs)',
+                              border: '1px solid var(--border-subtle)',
+                              gap: 2,
+                            }}
+                          >
                             <button
                               type="button"
                               className={`btn btn-sm ${gdriveMode === 'oauth' ? 'btn-primary' : 'btn-ghost'}`}
-                              style={{ flex: 1, fontSize: '0.72rem' }}
+                              style={{
+                                flex: 1,
+                                height: 26,
+                                minHeight: 26,
+                                fontSize: '0.68rem',
+                                padding: '0 6px',
+                                textTransform: 'none',
+                                letterSpacing: 'normal',
+                                whiteSpace: 'nowrap',
+                                gap: 4,
+                              }}
                               onClick={() => setGdriveMode('oauth')}
                             >
-                              🌐 Sign in with Google
+                              <span>🌐 Google Sign-In</span>
                             </button>
                             <button
                               type="button"
                               className={`btn btn-sm ${gdriveMode === 'token' ? 'btn-primary' : 'btn-ghost'}`}
-                              style={{ flex: 1, fontSize: '0.72rem' }}
+                              style={{
+                                flex: 1,
+                                height: 26,
+                                minHeight: 26,
+                                fontSize: '0.68rem',
+                                padding: '0 6px',
+                                textTransform: 'none',
+                                letterSpacing: 'normal',
+                                whiteSpace: 'nowrap',
+                                gap: 4,
+                              }}
                               onClick={() => setGdriveMode('token')}
                             >
-                              🔑 Direct OAuth Token
+                              <span>🔑 Direct Token</span>
                             </button>
                           </div>
 
                           {gdriveMode === 'oauth' ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                              <div style={{ background: 'var(--bg-surface)', padding: '12px 14px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)', fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                              <div style={{ background: 'var(--bg-surface)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)', fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                                 <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>
                                   Google OAuth 2.0 PKCE Authorization
                                 </div>
@@ -1731,13 +1760,13 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                                 </div>
                               </div>
 
-                              <div style={{ background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.3)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', fontSize: '0.73rem', lineHeight: 1.5 }}>
+                              <div style={{ background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.3)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', fontSize: '0.72rem', lineHeight: 1.5 }}>
                                 <div style={{ fontWeight: 700, color: 'var(--text-warning)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                                   <Shield size={14} /> Required Google Permissions on Sign-In Screen
                                 </div>
                                 <div style={{ color: 'var(--text-secondary)' }}>
                                   On Google's consent screen, you <strong>must check the box</strong>:
-                                  <div style={{ margin: '6px 0', padding: '6px 8px', background: 'var(--bg-surface)', borderRadius: 4, fontFamily: 'var(--font-tech)', fontSize: '0.7rem', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)' }}>
+                                  <div style={{ margin: '6px 0', padding: '6px 8px', background: 'var(--bg-surface)', borderRadius: 4, fontFamily: 'var(--font-tech)', fontSize: '0.68rem', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', overflowWrap: 'break-word' }}>
                                     ☑️ "See, edit, create, and delete only the specific Google Drive files..."
                                   </div>
                                   This allows LIBRIX to create your dedicated <code>/LIBRIX</code> vault folder and organize books & notes in Google Drive.
@@ -1752,12 +1781,13 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                                   value={customGdriveClientId}
                                   disabled={!!connectingStatus}
                                   onChange={e => setCustomGdriveClientId(e.target.value)}
+                                  style={{ width: '100%', boxSizing: 'border-box' }}
                                 />
                               </div>
 
                               <button
                                 className="btn btn-primary"
-                                style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontWeight: 600 }}
+                                style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifySelf: 'stretch', justifyContent: 'center', gap: 8, fontWeight: 600, width: '100%' }}
                                 disabled={!!connectingStatus}
                                 onClick={() => handleConnectPopularProvider(undefined, customGdriveClientId.trim() || undefined)}
                               >
@@ -1792,6 +1822,7 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                                   value={popularAuthToken}
                                   disabled={!!connectingStatus}
                                   onChange={e => setPopularAuthToken(e.target.value)}
+                                  style={{ width: '100%', boxSizing: 'border-box' }}
                                 />
                               </div>
 
@@ -1805,42 +1836,53 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
                                   value={popularRefreshToken}
                                   disabled={!!connectingStatus}
                                   onChange={e => setPopularRefreshToken(e.target.value)}
+                                  style={{ width: '100%', boxSizing: 'border-box' }}
                                 />
                               </div>
 
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                                <div className="form-group">
-                                  <label className="form-label" style={{ fontSize: '0.68rem' }}>
-                                    Client ID {popularRefreshToken.trim() && !popularAuthToken.trim() ? <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>*Required for Refresh Token</span> : '(Optional)'}
-                                  </label>
-                                  <input
-                                    type="text"
-                                    placeholder="e.g. 123...apps.googleusercontent.com"
-                                    value={customGdriveClientId}
-                                    disabled={!!connectingStatus}
-                                    onChange={e => setCustomGdriveClientId(e.target.value)}
-                                  />
-                                </div>
-                                <div className="form-group">
-                                  <label className="form-label" style={{ fontSize: '0.68rem' }}>Client Secret (Optional)</label>
-                                  <input
-                                    type="password"
-                                    placeholder="GOCSPX-..."
-                                    value={customGdriveClientSecret}
-                                    disabled={!!connectingStatus}
-                                    onChange={e => setCustomGdriveClientSecret(e.target.value)}
-                                  />
-                                </div>
+                              <div className="form-group">
+                                <label className="form-label" style={{ fontSize: '0.68rem' }}>
+                                  Client ID {popularRefreshToken.trim() && !popularAuthToken.trim() ? <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>*Required for Refresh Token</span> : '(Optional)'}
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. 123...apps.googleusercontent.com"
+                                  value={customGdriveClientId}
+                                  disabled={!!connectingStatus}
+                                  onChange={e => setCustomGdriveClientId(e.target.value)}
+                                  style={{ width: '100%', boxSizing: 'border-box' }}
+                                />
+                              </div>
+
+                              <div className="form-group">
+                                <label className="form-label" style={{ fontSize: '0.68rem' }}>Client Secret (Optional)</label>
+                                <input
+                                  type="password"
+                                  placeholder="GOCSPX-..."
+                                  value={customGdriveClientSecret}
+                                  disabled={!!connectingStatus}
+                                  onChange={e => setCustomGdriveClientSecret(e.target.value)}
+                                  style={{ width: '100%', boxSizing: 'border-box' }}
+                                />
                               </div>
 
                               <button
                                 className="btn btn-primary"
-                                style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontWeight: 600 }}
+                                style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontWeight: 600, width: '100%' }}
                                 disabled={!!connectingStatus || (!popularAuthToken.trim() && !popularRefreshToken.trim())}
                                 onClick={() => handleConnectPopularProvider(popularAuthToken.trim() || undefined, customGdriveClientId.trim() || undefined, popularRefreshToken.trim() || undefined, undefined, customGdriveClientSecret.trim() || undefined)}
                               >
-                                {connectingStatus ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                                <span>{connectingStatus || 'Verify & Connect Google Drive'}</span>
+                                {connectingStatus ? (
+                                  <>
+                                    <Loader2 size={15} className="animate-spin" />
+                                    <span>{connectingStatus}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Check size={15} />
+                                    <span>Verify & Connect Google Drive</span>
+                                  </>
+                                )}
                               </button>
                             </div>
                           )}

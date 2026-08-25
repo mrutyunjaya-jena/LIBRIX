@@ -516,9 +516,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 <option value="all">ALL STORAGE</option>
                 <option value="local">LOCAL DISK</option>
                 <option value="gdrive">GOOGLE DRIVE</option>
-                <option value="telegram">TELEGRAM</option>
-                <option value="mega">MEGA</option>
-                <option value="terabox">TERABOX</option>
               </select>
 
               <select

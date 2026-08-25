@@ -1,9 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <rect width="512" height="512" rx="128" fill="#0f172a" />
-  <rect x="24" y="24" width="464" height="464" rx="104" stroke="#38bdf8" stroke-width="8" stroke-opacity="0.3" />
-  <path d="M120 390V120C120 95 140 75 165 75H380V390H165C140 390 120 410 120 435V390Z" fill="#1e293b" stroke="#38bdf8" stroke-width="16" />
-  <path d="M165 75C140 75 120 95 120 120V390C120 415 140 435 165 435H380" stroke="#38bdf8" stroke-width="16" stroke-linecap="round" />
-  <path d="M180 160H320" stroke="#f8fafc" stroke-width="14" stroke-linecap="round" />
-  <path d="M180 230H320" stroke="#94a3b8" stroke-width="14" stroke-linecap="round" />
-  <path d="M180 300H260" stroke="#38bdf8" stroke-width="14" stroke-linecap="round" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108">
+  <rect width="108" height="108" rx="24" fill="#09090B"/>
+  <!-- Outer Subtle Frame -->
+  <rect x="26" y="26" width="56" height="56" rx="8" fill="none" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="1.5"/>
+  <!-- Left Book Wing -->
+  <path d="M51 41.5 L34 35.5 C32.3 34.9 30.5 36.2 30.5 38 L30.5 69 C30.5 70.4 31.8 71.5 33.2 71.8 L51 75.5 Z" fill="#FFFFFF"/>
+  <!-- Right Book Wing -->
+  <path d="M57 41.5 L74 35.5 C75.7 34.9 77.5 36.2 77.5 38 L77.5 69 C77.5 70.4 76.2 71.5 74.8 71.8 L57 75.5 Z" fill="#FFFFFF"/>
+  <!-- Left Wing Cutout -->
+  <path d="M48.5 45.5 L36 41 C35.2 40.7 34.5 41.3 34.5 42.2 L34.5 65.5 C34.5 66.2 35.1 66.8 35.8 67 L48.5 69.5 Z" fill="#09090B"/>
+  <!-- Right Wing Cutout -->
+  <path d="M59.5 45.5 L72 41 C72.8 40.7 73.5 41.3 73.5 42.2 L73.5 65.5 C73.5 66.2 72.9 66.8 72.2 67 L59.5 69.5 Z" fill="#09090B"/>
+  <!-- Center Diamond -->
+  <path d="M54 32 L60.5 43 L54 54 L47.5 43 Z" fill="#FFFFFF"/>
+  <!-- Diamond Inner Core -->
+  <path d="M54 37 L57.5 43 L54 49 L50.5 43 Z" fill="#09090B"/>
+  <!-- Diamond Sparkle -->
+  <path d="M54 41 L55.5 43 L54 45 L52.5 43 Z" fill="#FFFFFF"/>
+  <!-- Bottom Center Pillar -->
+  <path d="M54 61 L58 68 L54 76 L50 68 Z" fill="#FFFFFF"/>
 </svg>
