@@ -52,15 +52,16 @@ export const DeleteSafetyModal: React.FC<DeleteSafetyModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
-          <button className="btn btn-ghost" onClick={onClose}>
+        <div className="modal-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <button className="btn btn-ghost" onClick={onClose} style={{ display: 'inline-flex', alignItems: 'center' }}>
             Cancel
           </button>
 
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {!document.isTrash && (
               <button
                 className="btn btn-secondary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                 onClick={() => onConfirm(document.id, false)}
               >
                 Move to Trash
@@ -69,10 +70,18 @@ export const DeleteSafetyModal: React.FC<DeleteSafetyModalProps> = ({
 
             <button
               className="btn btn-danger"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                padding: '0.45rem 0.85rem',
+                cursor: 'pointer',
+              }}
               onClick={() => onConfirm(document.id, true)}
             >
-              <Trash2 size={13} />
-              <span>Delete Permanently</span>
+              <Trash2 size={13} style={{ flexShrink: 0, display: 'inline-block', verticalAlign: 'middle' }} />
+              <span style={{ display: 'inline-flex', alignItems: 'center', lineHeight: 1 }}>Delete Permanently</span>
             </button>
           </div>
         </div>

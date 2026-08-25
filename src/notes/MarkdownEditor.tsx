@@ -31,6 +31,8 @@ import { CanvasBlock, BlockEngine, BlockType, NotionBlock, NotionBlockEngine, No
 import { LiveBlockItem } from './LiveBlockItem';
 import { storageRegistry } from '../storage/StorageRegistry';
 import { cloudVaultSyncService } from '../storage/sync/CloudVaultSyncService';
+import { localDiskVaultService } from '../storage/local/LocalDiskVaultService';
+import { storageUsageIndex } from '../storage/usage/StorageUsageIndex';
 
 interface MarkdownEditorProps {
   note: Note;
@@ -111,14 +113,53 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
   const editorContainerRef = useRef<HTMLDivElement>(null);
 
-  // Sync markdown whenever blocks change
+  // Latest state reference for safe unmount & auto-save execution
+  const latestStateRef = useRef({
+    note,
+    blocks,
+    rawMarkdown,
+    title,
+    icon,
+    cover,
+    status,
+    editorMode,
+  });
+
   useEffect(() => {
-    const md = NotionBlockEngine.blocksToMarkdown(blocks);
-    setRawMarkdown(md);
-    const updatedParsed = parseNoteContent(md);
-    setParsed(updatedParsed);
-    setIsSaved(false);
-  }, [blocks]);
+    latestStateRef.current = {
+      note,
+      blocks,
+      rawMarkdown,
+      title,
+      icon,
+      cover,
+      status,
+      editorMode,
+    };
+  }, [note, blocks, rawMarkdown, title, icon, cover, status, editorMode]);
+
+  // Sync markdown whenever blocks change in live mode
+  useEffect(() => {
+    if (editorMode === 'live') {
+      const md = NotionBlockEngine.blocksToMarkdown(blocks);
+      setRawMarkdown(md);
+      const updatedParsed = parseNoteContent(md);
+      setParsed(updatedParsed);
+    }
+  }, [blocks, editorMode]);
+
+  // Re-sync editor state if note prop changes
+  useEffect(() => {
+    const p = parseNoteContent(note.content);
+    setParsed(p);
+    setBlocks(NotionBlockEngine.markdownToBlocks(note.content));
+    setRawMarkdown(note.content);
+    setTitle(note.title || p.title || 'Untitled Note');
+    setIcon(note.frontmatter?.icon || p.icon || '📄');
+    setCover(note.frontmatter?.cover || p.cover || '');
+    setStatus(note.frontmatter?.status || p.status || 'Draft');
+    setIsSaved(true);
+  }, [note.id]);
 
   // Load backlinks
   useEffect(() => {
@@ -140,38 +181,47 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const wordsCount = rawMarkdown.trim() ? rawMarkdown.trim().split(/\s+/).length : 0;
   const readingTimeMin = Math.max(1, Math.ceil(wordsCount / 200));
 
-  // Save changes to database
+  // Save changes to database and local disk
   const handleSave = async (customMarkdown?: string, customTitle?: string) => {
-    const activeMarkdown = customMarkdown !== undefined ? customMarkdown : NotionBlockEngine.blocksToMarkdown(blocks);
+    const s = latestStateRef.current;
+    const activeMarkdown = customMarkdown !== undefined
+      ? customMarkdown
+      : (s.editorMode === 'source' ? s.rawMarkdown : NotionBlockEngine.blocksToMarkdown(s.blocks));
+
     const currentParsed = parseNoteContent(activeMarkdown);
-    const resolvedTitle = customTitle || title || currentParsed.title || note.title;
+    const resolvedTitle = (customTitle !== undefined ? customTitle : s.title) || currentParsed.title || s.note.title || 'Untitled Note';
+    const resolvedSlug = resolvedTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'untitled-note';
 
     const updatedFrontmatter = {
       ...currentParsed.frontmatter,
       title: resolvedTitle,
-      icon,
-      cover: cover || undefined,
-      status,
+      icon: s.icon,
+      cover: s.cover || undefined,
+      status: s.status,
       tags: currentParsed.tags,
       modified: new Date().toISOString().slice(0, 10),
     };
 
     let finalContent = activeMarkdown;
+    const hasFrontmatter = /^---\r?\n[\s\S]*?\r?\n---/.test(activeMarkdown);
+    const hasCustomMeta = s.icon !== '📄' || s.cover || s.status !== 'Draft' || (currentParsed.tags && currentParsed.tags.length > 0);
+
     const fmString =
-      `---\ntitle: "${resolvedTitle}"\nicon: "${icon}"\nstatus: "${status}"\n` +
-      (cover ? `cover: "${cover}"\n` : '') +
+      `---\ntitle: "${resolvedTitle}"\nicon: "${s.icon}"\nstatus: "${s.status}"\n` +
+      (s.cover ? `cover: "${s.cover}"\n` : '') +
       (currentParsed.tags.length > 0 ? `tags: [${currentParsed.tags.map(t => `"${t}"`).join(', ')}]\n` : '') +
       `---\n\n`;
 
-    if (/^---\r?\n[\s\S]*?\r?\n---/.test(activeMarkdown)) {
+    if (hasFrontmatter) {
       finalContent = activeMarkdown.replace(/^---\r?\n[\s\S]*?\r?\n---/, fmString.trim());
-    } else if (icon !== '📄' || cover || status !== 'Draft') {
+    } else if (hasCustomMeta && activeMarkdown.trim().length > 0) {
       finalContent = fmString + activeMarkdown;
     }
 
     const updatedNote: Note = {
-      ...note,
+      ...s.note,
       title: resolvedTitle,
+      slug: resolvedSlug,
       content: finalContent,
       frontmatter: updatedFrontmatter,
       tags: currentParsed.tags,
@@ -179,24 +229,62 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       modifiedAt: Date.now(),
     };
 
+    // 1. Immediately persist to database (sync < 2ms)
     await db.saveNote(updatedNote);
+    storageUsageIndex.markDirty();
 
-    // Sync to all connected cloud providers (e.g. Google Drive)
-    const cloudProviders = storageRegistry.getAllProviders().filter(p => p.type !== 'local' && p.isConnected());
-    for (const provider of cloudProviders) {
-      try {
-        const targetFolderPath = await cloudVaultSyncService.getFolderPathString(updatedNote.folderId, '/LIBRIX/Notes');
-        const safeTitle = (updatedNote.title || 'Untitled_Note').replace(/[/\\?%*:|"<>]/g, '_');
-        const noteBytes = new TextEncoder().encode(updatedNote.content);
-        await provider.upload(targetFolderPath, `${safeTitle}.md`, noteBytes, 'text/markdown');
-        await cloudVaultSyncService.saveMasterVaultCatalog(provider).catch(() => {});
-      } catch (cloudErr) {
-        console.warn('Could not sync note to cloud provider:', cloudErr);
-      }
-    }
+    // 2. Persist to local disk if vault connected
+    await localDiskVaultService.saveNoteToDisk(resolvedTitle, finalContent, updatedNote).catch(() => {});
 
+    // 3. Notify parent
     onSave(updatedNote);
     setIsSaved(true);
+
+    // 4. Background cloud sync (fire-and-forget, never blocks UI or back button)
+    (async () => {
+      const cloudProviders = storageRegistry.getAllProviders().filter(p => p.type !== 'local' && p.isConnected());
+      for (const provider of cloudProviders) {
+        try {
+          const targetFolderPath = await cloudVaultSyncService.getFolderPathString(updatedNote.folderId, '/LIBRIX/Notes');
+          const safeTitle = (updatedNote.title || 'Untitled_Note').replace(/[/\\?%*:|"<>]/g, '_');
+          const noteBytes = new TextEncoder().encode(updatedNote.content);
+          await provider.upload(targetFolderPath, `${safeTitle}.md`, noteBytes, 'text/markdown');
+          await cloudVaultSyncService.saveMasterVaultCatalog(provider).catch(() => {});
+        } catch (cloudErr) {
+          console.warn('Could not sync note to cloud provider:', cloudErr);
+        }
+      }
+    })().catch(() => {});
+  };
+
+  // Automatic Debounced Auto-Save (500ms)
+  const isInitialMount = useRef(true);
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    setIsSaved(false);
+    const saveTimer = setTimeout(() => {
+      handleSave();
+    }, 500);
+    return () => clearTimeout(saveTimer);
+  }, [blocks, rawMarkdown, title, icon, cover, status]);
+
+  // Flush save on component unmount
+  useEffect(() => {
+    return () => {
+      handleSave();
+    };
+  }, []);
+
+  const handleClose = async () => {
+    try {
+      await handleSave();
+    } catch (err) {
+      console.warn('Auto-save error on back:', err);
+    }
+    onClose();
   };
 
   // Block Mutations
@@ -204,6 +292,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     const nextBlocks = [...blocks];
     nextBlocks[index] = updated;
     setBlocks(nextBlocks);
+    setIsSaved(false);
   };
 
   const handleEnterBlock = (index: number) => {
@@ -380,7 +469,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       {/* Top Navigation & Action Header */}
       <header className="markdown-editor-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}>
-          <button className="btn-icon btn-sm" onClick={onClose} title="Back to Notes Vault">
+          <button className="btn-icon btn-sm" onClick={handleClose} title="Back to Notes Vault">
             <ArrowLeft size={16} />
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>

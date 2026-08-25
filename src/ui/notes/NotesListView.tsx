@@ -77,20 +77,25 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
     );
   }
 
+  const handleOpenNote = async (n: Note) => {
+    const fresh = await db.getNoteById(n.id);
+    setActiveNote(fresh || n);
+  };
+
   const handleCreateNewNote = async () => {
     const newNote: Note = {
       id: `note_${Date.now()}`,
       title: 'Untitled Note',
       slug: 'untitled-note',
-      content: `# Untitled Note\n\n> 💡 **Tip:** Type \`/\` anywhere to insert blocks, callouts & AI actions.\n\n### Objectives\n- [ ] Define research scope\n- [ ] Connect with [[Universal Storage Architecture]]\n\n### Notes & Synthesis\n\n#Research`,
+      content: '', // Starts completely empty for user input
       frontmatter: {
         title: 'Untitled Note',
         icon: '📄',
         status: 'Draft',
         created: new Date().toISOString().slice(0, 10),
       },
-      tags: ['Research'],
-      wikilinks: ['Universal Storage Architecture'],
+      tags: [],
+      wikilinks: [],
       backlinks: [],
       createdAt: Date.now(),
       modifiedAt: Date.now(),
@@ -104,7 +109,8 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
     const today = new Date().toISOString().slice(0, 10);
     const existing = notes.find(n => n.title === `Daily Note: ${today}`);
     if (existing) {
-      setActiveNote(existing);
+      const fresh = await db.getNoteById(existing.id);
+      setActiveNote(fresh || existing);
       return;
     }
 
@@ -112,7 +118,7 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
       id: `daily_${Date.now()}`,
       title: `Daily Note: ${today}`,
       slug: `daily-note-${today}`,
-      content: `# Daily Note: ${today}\n\n> 🎯 **Daily Focus:** Focus on critical milestones.\n\n### Priority Tasks\n- [ ] Review literature & library books\n- [ ] Cross-link ideas with [[Universal Storage Architecture]]\n\n### Notes & Reflections\n\n#DailyJournal`,
+      content: `# Daily Note: ${today}\n\n`,
       frontmatter: {
         title: `Daily Note: ${today}`,
         icon: '🗓️',
@@ -121,7 +127,7 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
         tags: ['DailyJournal'],
       },
       tags: ['DailyJournal'],
-      wikilinks: ['Universal Storage Architecture'],
+      wikilinks: [],
       backlinks: [],
       createdAt: Date.now(),
       modifiedAt: Date.now(),
@@ -144,14 +150,16 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
     return (
       <MarkdownEditor
         note={activeNote}
-        onSave={async updated => {
-          await db.saveNote(updated);
+        onSave={() => {
           onNotesUpdated();
-          setActiveNote(updated);
         }}
-        onClose={() => setActiveNote(null)}
-        onNavigateNote={target => {
-          const match = notes.find(
+        onClose={() => {
+          onNotesUpdated();
+          setActiveNote(null);
+        }}
+        onNavigateNote={async target => {
+          const allNotes = await db.getNotes();
+          const match = allNotes.find(
             n => n.title.toLowerCase() === target.toLowerCase() || n.id === target
           );
           if (match) setActiveNote(match);
@@ -283,7 +291,7 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
                 <div
                   key={note.id}
                   className="card card-interactive"
-                  onClick={() => setActiveNote(note)}
+                  onClick={() => handleOpenNote(note)}
                   style={{
                     padding: 0,
                     display: 'flex',
@@ -460,7 +468,7 @@ export const NotesListView: React.FC<NotesListViewProps> = ({
                   return (
                     <tr
                       key={note.id}
-                      onClick={() => setActiveNote(note)}
+                      onClick={() => handleOpenNote(note)}
                       style={{ borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer' }}
                       className="card-interactive"
                     >

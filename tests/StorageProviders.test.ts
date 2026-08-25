@@ -213,14 +213,21 @@ describe('Storage System & Cross-Platform Architecture', () => {
         } as any;
       }
       if (url.includes('files')) {
+        if (url.includes('Quantum')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              files: [
+                { id: 'search_1', name: 'Quantum_Computing.pdf', mimeType: 'application/pdf', size: '2048000' },
+              ],
+            }),
+          } as any;
+        }
         return {
           ok: true,
           status: 200,
-          json: async () => ({
-            files: [
-              { id: 'search_1', name: 'Quantum_Computing.pdf', mimeType: 'application/pdf', size: '2048000' },
-            ],
-          }),
+          json: async () => ({ files: [] }),
         } as any;
       }
       return { ok: true, status: 200, json: async () => ({}) } as any;
