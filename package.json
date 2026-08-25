@@ -11,13 +11,15 @@
     "test": "vitest run",
     "android": "npx cap sync android && npx cap open android",
     "build:android": "npm run build && npx cap sync android",
-    "build:linux": "npm run build && electron-builder --linux AppImage tar.gz"
+    "build:linux": "npm run build && electron-builder --linux AppImage tar.gz",
+    "build:win": "npm run build && electron-builder --win nsis portable",
+    "build:all": "npm run build && electron-builder --linux AppImage tar.gz --win nsis portable"
   },
   "build": {
     "appId": "com.librix.app",
     "productName": "LIBRIX",
     "directories": {
-      "output": "release-linux"
+      "output": "release-desktop"
     },
     "files": [
       "dist/**/*",
@@ -33,6 +35,20 @@
       "category": "Office",
       "maintainer": "LIBRIX Team <support@librix.app>",
       "icon": "public/icon.png"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "public/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "LIBRIX"
     }
   },
   "dependencies": {

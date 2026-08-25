@@ -1,4 +1,4 @@
-name: Release APK
+name: Release Multi-Platform Binaries
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build-android:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -54,16 +54,103 @@ jobs:
           mkdir -p release
           cp android/app/build/outputs/apk/debug/app-debug.apk release/librix-${{ github.ref_name }}.apk
 
-      - name: Create GitHub Release & Upload APK
+      - name: Upload Android Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: release/librix-${{ github.ref_name }}.apk
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci || npm install
+
+      - name: Build Windows Installer & Portable EXE
+        run: npx electron-builder --win nsis portable
+
+      - name: Copy & Rename Windows Assets
+        shell: bash
+        run: |
+          mkdir -p release
+          cp release-desktop/*.exe release/ 2>/dev/null || true
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binaries
+          path: release-desktop/*.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci || npm install
+
+      - name: Build Linux AppImage
+        run: npx electron-builder --linux AppImage
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: release-desktop/*.AppImage
+
+  publish-release:
+    needs: [build-android, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Android Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: release-assets/
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-binaries
+          path: release-assets/
+
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-appimage
+          path: release-assets/
+
+      - name: Create GitHub Release & Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: release/librix-${{ github.ref_name }}.apk
+          files: release-assets/*
           generate_release_notes: true
           name: LIBRIX ${{ github.ref_name }}
           body: |
             ## 🚀 LIBRIX ${{ github.ref_name }} Release
             
-            Universal Local-First Knowledge Vault, Multi-Format Reader (PDF, EPUB, Markdown), Notion-Style Block Notes & Google Drive Cloud Sync.
+            Universal Knowledge Vault, Multi-Format Reader (PDF, EPUB, Markdown), Notion-Style Block Notes & Google Drive Cloud Sync.
             
-            ### 📱 Download Android APK
-            - **[librix-${{ github.ref_name }}.apk](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/librix-${{ github.ref_name }}.apk)** (Android 13 - 17+ Supported)
+            ### 📱 Mobile & Desktop Downloads
+            - **Android APK**: `librix-${{ github.ref_name }}.apk` (Android 13 to 17+)
+            - **Windows Installer**: `LIBRIX Setup *.exe` / Portable `.exe` (Windows 10/11)
+            - **Linux Universal**: `LIBRIX-*.AppImage` (All Linux distros)

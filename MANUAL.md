@@ -45,6 +45,14 @@ LIBRIX is built on three foundational pillars:
   2. Tap the APK in your file manager and select **Install** (allow *Install Unknown Apps* if prompted).
   3. Launch LIBRIX with the minimalist Black & White Cyber Book launcher icon.
 
+### Windows Desktop (10 / 11)
+- **Portable ZIP**:
+  1. Extract `release/librix-v1.0.0-windows-x64.zip`.
+  2. Double-click `LIBRIX.exe` to launch immediately with zero installation.
+- **Installer (.exe)**:
+  1. Download `LIBRIX-Setup-*.exe` from the official GitHub Releases page.
+  2. Run the setup wizard to install and add Desktop & Start Menu shortcuts.
+
 ### Linux Desktop (AppImage & Portable)
 - **Universal AppImage**:
   ```bash
