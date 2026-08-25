@@ -2,6 +2,7 @@
   "name": "librix",
   "private": true,
   "version": "1.0.0",
+  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +10,30 @@
     "preview": "vite preview",
     "test": "vitest run",
     "android": "npx cap sync android && npx cap open android",
-    "build:android": "npm run build && npx cap sync android"
+    "build:android": "npm run build && npx cap sync android",
+    "build:linux": "npm run build && electron-builder --linux AppImage tar.gz"
+  },
+  "build": {
+    "appId": "com.librix.app",
+    "productName": "LIBRIX",
+    "directories": {
+      "output": "release-linux"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "category": "Office",
+      "maintainer": "LIBRIX Team <support@librix.app>",
+      "icon": "public/icon.png"
+    }
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
@@ -31,6 +55,8 @@
     "@types/react-dom": "^19.1.0",
     "@types/sql.js": "^1.4.9",
     "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.8.2",
     "vite": "^6.2.0",
     "vitest": "^3.0.8"
