@@ -240,13 +240,22 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     onSave(updatedNote);
     setIsSaved(true);
 
-    // 4. Background cloud sync (fire-and-forget, never blocks UI or back button)
+    // 4. Background cloud sync (fire-and-forget, cleans old renamed files and updates catalog)
     (async () => {
       const cloudProviders = storageRegistry.getAllProviders().filter(p => p.type !== 'local' && p.isConnected());
       for (const provider of cloudProviders) {
         try {
           const targetFolderPath = await cloudVaultSyncService.getFolderPathString(updatedNote.folderId, '/LIBRIX/Notes');
           const safeTitle = (updatedNote.title || 'Untitled_Note').replace(/[/\\?%*:|"<>]/g, '_');
+
+          // Clean previous file on cloud if note was renamed to prevent duplicate cloud files
+          if (s.note.title && s.note.title !== updatedNote.title) {
+            const oldSafeTitle = s.note.title.replace(/[/\\?%*:|"<>]/g, '_');
+            if (oldSafeTitle !== safeTitle) {
+              await provider.delete(`${targetFolderPath}/${oldSafeTitle}.md`).catch(() => {});
+            }
+          }
+
           const noteBytes = new TextEncoder().encode(updatedNote.content);
           await provider.upload(targetFolderPath, `${safeTitle}.md`, noteBytes, 'text/markdown');
           await cloudVaultSyncService.saveMasterVaultCatalog(provider).catch(() => {});

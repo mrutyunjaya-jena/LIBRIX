@@ -482,6 +482,29 @@ export class DatabaseEngine {
   // Notes & Knowledge
   public async getNotes(): Promise<Note[]> {
     await this.initialize();
+
+    // Automatic deduplication by title (keeps newest version)
+    const unique = new Map<string, Note>();
+    const titleMap = new Map<string, string>(); // lowercase title -> note id
+
+    const sorted = Array.from(this.notes.values()).sort((a, b) => b.modifiedAt - a.modifiedAt);
+    for (const note of sorted) {
+      const cleanTitle = (note.title || '').trim().toLowerCase();
+      if (!cleanTitle || cleanTitle === 'untitled note') {
+        unique.set(note.id, note);
+        continue;
+      }
+      if (!titleMap.has(cleanTitle)) {
+        titleMap.set(cleanTitle, note.id);
+        unique.set(note.id, note);
+      }
+    }
+
+    if (unique.size !== this.notes.size) {
+      this.notes = unique;
+      this.saveToStorage();
+    }
+
     return Array.from(this.notes.values()).sort((a, b) => b.modifiedAt - a.modifiedAt);
   }
 
@@ -493,6 +516,17 @@ export class DatabaseEngine {
   public async saveNote(note: Note): Promise<void> {
     await this.initialize();
     note.modifiedAt = Date.now();
+
+    // Remove any duplicate note with exact same title
+    const cleanTitle = (note.title || '').trim().toLowerCase();
+    if (cleanTitle && cleanTitle !== 'untitled note') {
+      for (const [existingId, existingNote] of this.notes.entries()) {
+        if (existingId !== note.id && (existingNote.title || '').trim().toLowerCase() === cleanTitle) {
+          this.notes.delete(existingId);
+        }
+      }
+    }
+
     this.notes.set(note.id, note);
     this.saveToStorage();
   }

@@ -724,6 +724,8 @@ export class GoogleDriveProvider implements IStorageProvider {
         const parentId = await this.getOrCreateFolderPath(folderPath);
         if (parentId) {
           queryStr = `'${parentId}' in parents and trashed = false`;
+        } else {
+          return [];
         }
       }
 
@@ -739,19 +741,7 @@ export class GoogleDriveProvider implements IStorageProvider {
       if (res.ok) {
         const data = await res.json();
         const files = (data.files || []).map((f: any) => this.mapDriveFile(f));
-        if (files.length > 0) return files;
-      }
-
-      // Fallback: If specific folder had 0 items, search whole drive for all documents
-      if (folderPath && folderPath !== 'all') {
-        const fallbackQuery = "trashed = false and mimeType != 'application/vnd.google-apps.folder' and (mimeType = 'application/pdf' or mimeType = 'application/epub+zip' or mimeType = 'text/plain' or name contains '.pdf' or name contains '.epub' or name contains '.md')";
-        const fallbackRes = await this.makeRequest(
-          `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(fallbackQuery)}&fields=files(id,name,mimeType,size,modifiedTime)&pageSize=200`
-        );
-        if (fallbackRes.ok) {
-          const fbData = await fallbackRes.json();
-          return (fbData.files || []).map((f: any) => this.mapDriveFile(f));
-        }
+        return files;
       }
     } catch (err) {
       console.warn('Google Drive listFiles failed:', err instanceof Error ? err.message : err);
@@ -764,7 +754,171 @@ export class GoogleDriveProvider implements IStorageProvider {
       `https://www.googleapis.com/drive/v3/files/${itemPath}?fields=id,name,mimeType,size,modifiedTime`
     );
     if (res.ok) return this.mapDriveFile(await res.json());
-    throw new Error(`Google Drive file not found: ${itemPath}`);
+    throw new Error(`Google Drive getMetadata failed for ${itemPath}`);
+  }
+
+  async createFolder(folderPath: string, name: string): Promise<StorageItem> {
+    const parentId = await this.getOrCreateFolderPath(folderPath);
+    const folderId = await this.findOrCreateFolder(name, parentId);
+    return {
+      id: folderId,
+      name,
+      path: folderId,
+      size: 0,
+      isDirectory: true,
+      modifiedAt: Date.now(),
+      providerType: 'gdrive',
+      providerId: this.id,
+    };
+  }
+
+  async renameFile(itemPath: string, newName: string): Promise<StorageItem> {
+    const res = await this.makeRequest(`https://www.googleapis.com/drive/v3/files/${itemPath}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName }),
+    });
+    if (res.ok) return this.mapDriveFile(await res.json());
+    throw new Error(`Google Drive rename failed with HTTP ${res.status}.`);
+  }
+
+  async moveFile(itemPath: string, newParentFolderId: string, currentParentFolderId?: string): Promise<StorageItem> {
+    const params = new URLSearchParams({ addParents: newParentFolderId });
+    if (currentParentFolderId) params.append('removeParents', currentParentFolderId);
+
+    const res = await this.makeRequest(
+      `https://www.googleapis.com/drive/v3/files/${itemPath}?${params.toString()}`,
+      { method: 'PATCH' }
+    );
+    if (res.ok) return this.mapDriveFile(await res.json());
+    throw new Error(`Google Drive move failed with HTTP ${res.status}.`);
+  }
+
+  async copyFile(itemPath: string, destinationFolderId?: string, newName?: string): Promise<StorageItem> {
+    const body: any = {};
+    if (newName) body.name = newName;
+    if (destinationFolderId) body.parents = [destinationFolderId];
+
+    const res = await this.makeRequest(`https://www.googleapis.com/drive/v3/files/${itemPath}/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return this.mapDriveFile(await res.json());
+    throw new Error(`Google Drive copy failed with HTTP ${res.status}.`);
+  }
+
+  async delete(itemPath: string): Promise<void> {
+    const res = await this.makeRequest(`https://www.googleapis.com/drive/v3/files/${itemPath}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Google Drive delete failed with HTTP ${res.status}.`);
+    }
+  }
+
+  async search(query: string): Promise<StorageItem[]> {
+    const escaped = query.replace(/'/g, "\\'");
+    const q = `trashed = false and name contains '${escaped}'`;
+    const res = await this.makeRequest(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,modifiedTime)&pageSize=50`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      return (data.files || []).map((f: any) => this.mapDriveFile(f));
+    }
+    return [];
+  }
+
+  async upload(folderPath: string, filename: string, data: Uint8Array, mimeType?: string): Promise<StorageItem> {
+    const parentId = await this.getOrCreateFolderPath(folderPath);
+    const resolvedMime = mimeType || 'application/octet-stream';
+
+    // 1. Check if a file with this name already exists in this folder to avoid creating duplicate files
+    let existingFileId: string | null = null;
+    try {
+      const parentQuery = (parentId && parentId !== 'root') ? `'${parentId}' in parents and ` : "'root' in parents and ";
+      const escapedName = filename.replace(/'/g, "\\'");
+      const q = `${parentQuery}trashed = false and name = '${escapedName}'`;
+      const searchRes = await this.makeRequest(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name)`
+      );
+      if (searchRes.ok) {
+        const data = await searchRes.json();
+        if (data.files && data.files.length > 0) {
+          existingFileId = data.files[0].id;
+          // Clean any extra duplicate copies on Google Drive to maintain single-copy integrity
+          if (data.files.length > 1) {
+            for (let k = 1; k < data.files.length; k++) {
+              await this.makeRequest(`https://www.googleapis.com/drive/v3/files/${data.files[k].id}`, {
+                method: 'DELETE',
+              }).catch(() => {});
+            }
+          }
+        }
+      }
+    } catch {
+      // search fallback
+    }
+
+    // 2. If file already exists, UPDATE (PATCH) its content directly instead of creating duplicates!
+    if (existingFileId) {
+      const patchRes = await this.makeRequest(
+        `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingFileId)}?uploadType=media`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': resolvedMime },
+          body: data as unknown as BodyInit,
+        }
+      );
+      if (patchRes.ok) {
+        const file = await patchRes.json().catch(() => ({ id: existingFileId, name: filename }));
+        return {
+          id: file.id || existingFileId,
+          name: file.name || filename,
+          path: file.id || existingFileId,
+          size: data.length,
+          isDirectory: false,
+          mimeType: resolvedMime,
+          modifiedAt: Date.now(),
+          providerType: 'gdrive',
+          providerId: this.id,
+        };
+      }
+    }
+
+    // 3. Otherwise, create a new file
+    const meta = {
+      name: filename,
+      parents: parentId ? [parentId] : undefined,
+    };
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
+    form.append('file', new Blob([data as unknown as BlobPart], { type: resolvedMime }));
+
+    const res = await this.makeRequest(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+      {
+        method: 'POST',
+        body: form,
+      }
+    );
+
+    if (res.ok) {
+      const file = await res.json();
+      return {
+        id: file.id,
+        name: file.name,
+        path: file.id,
+        size: data.length,
+        isDirectory: false,
+        mimeType: resolvedMime,
+        modifiedAt: Date.now(),
+        providerType: 'gdrive',
+        providerId: this.id,
+      };
+    }
+    throw new Error(`Google Drive upload failed: ${res.statusText}`);
   }
 
   async download(itemPath: string, hintFilename?: string): Promise<Uint8Array> {
@@ -928,175 +1082,6 @@ export class GoogleDriveProvider implements IStorageProvider {
       this.folderCache.set('/' + cleanPath, currentParentId);
     }
     return currentParentId;
-  }
-
-  async upload(folderPath: string, filename: string, data: Uint8Array, mimeType?: string): Promise<StorageItem> {
-    const parentId = await this.getOrCreateFolderPath(folderPath);
-    const resolvedMime = mimeType || 'application/octet-stream';
-
-    // 1. Check if a file with this name already exists in this folder to avoid creating duplicate files
-    let existingFileId: string | null = null;
-    try {
-      const parentQuery = (parentId && parentId !== 'root') ? `'${parentId}' in parents and ` : "'root' in parents and ";
-      const escapedName = filename.replace(/'/g, "\\'");
-      const q = `${parentQuery}trashed = false and name = '${escapedName}'`;
-      const searchRes = await this.makeRequest(
-        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name)`
-      );
-      if (searchRes.ok) {
-        const data = await searchRes.json();
-        if (data.files && data.files.length > 0) {
-          existingFileId = data.files[0].id;
-        }
-      }
-    } catch {
-      // search fallback
-    }
-
-    // 2. If file already exists, UPDATE (PATCH) its content directly instead of creating duplicates!
-    if (existingFileId) {
-      const patchRes = await this.makeRequest(
-        `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingFileId)}?uploadType=media`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': resolvedMime },
-          body: data as unknown as BodyInit,
-        }
-      );
-      if (patchRes.ok) {
-        const file = await patchRes.json().catch(() => ({ id: existingFileId, name: filename }));
-        return {
-          id: file.id || existingFileId,
-          name: file.name || filename,
-          path: file.id || existingFileId,
-          size: data.length,
-          isDirectory: false,
-          mimeType: resolvedMime,
-          modifiedAt: Date.now(),
-          providerType: 'gdrive',
-          providerId: this.id,
-        };
-      }
-    }
-
-    // 3. Otherwise create the new file using multipart POST
-    const metadata: any = {
-      name: filename,
-      mimeType: resolvedMime,
-    };
-    if (parentId) {
-      metadata.parents = [parentId];
-    } else if (folderPath && folderPath !== '/' && folderPath !== 'root') {
-      throw new Error(`Could not find or create Google Drive folder "${folderPath}" for upload.`);
-    }
-
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('file', new Blob([data as unknown as BlobPart], { type: resolvedMime }));
-
-    const res = await this.makeRequest('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-      method: 'POST',
-      body: form,
-    });
-
-    if (res.ok) {
-      const file = await res.json();
-      return {
-        id: file.id,
-        name: file.name || filename,
-        path: file.id,
-        size: data.length,
-        isDirectory: false,
-        mimeType: resolvedMime,
-        modifiedAt: Date.now(),
-        providerType: 'gdrive',
-        providerId: this.id,
-      };
-    }
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Google Drive upload failed (${res.status}): ${errText || res.statusText}`);
-  }
-
-  async createFolder(folderPath: string, name: string): Promise<StorageItem> {
-    const parentId = await this.getOrCreateFolderPath(folderPath);
-    const folderId = await this.findOrCreateFolder(name, parentId);
-    return {
-      id: folderId,
-      name,
-      path: folderId,
-      size: 0,
-      isDirectory: true,
-      modifiedAt: Date.now(),
-      providerType: 'gdrive',
-      providerId: this.id,
-    };
-  }
-
-  async renameFile(itemPath: string, newName: string): Promise<StorageItem> {
-    const res = await this.makeRequest(`https://www.googleapis.com/drive/v3/files/${itemPath}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newName }),
-    });
-    if (res.ok) return this.mapDriveFile(await res.json());
-    throw new Error(`Google Drive rename failed with HTTP ${res.status}.`);
-  }
-
-  async moveFile(itemPath: string, newParentFolderId: string, currentParentFolderId?: string): Promise<StorageItem> {
-    const params = new URLSearchParams({ addParents: newParentFolderId });
-    if (currentParentFolderId) params.append('removeParents', currentParentFolderId);
-
-    const res = await this.makeRequest(
-      `https://www.googleapis.com/drive/v3/files/${itemPath}?${params.toString()}`,
-      { method: 'PATCH' }
-    );
-    if (res.ok) return this.mapDriveFile(await res.json());
-    throw new Error(`Google Drive move failed with HTTP ${res.status}.`);
-  }
-
-  async copyFile(itemPath: string, destinationFolderId?: string, newName?: string): Promise<StorageItem> {
-    const body: any = {};
-    if (newName) body.name = newName;
-    if (destinationFolderId) body.parents = [destinationFolderId];
-
-    const res = await this.makeRequest(`https://www.googleapis.com/drive/v3/files/${itemPath}/copy`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (res.ok) return this.mapDriveFile(await res.json());
-    throw new Error(`Google Drive copy failed with HTTP ${res.status}.`);
-  }
-
-  async search(query: string): Promise<StorageItem[]> {
-    const escaped = query.replace(/'/g, "\\'");
-    const q = `trashed = false and name contains '${escaped}'`;
-    const res = await this.makeRequest(
-      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,modifiedTime)&pageSize=50`
-    );
-    if (res.ok) {
-      const data = await res.json();
-      return (data.files || []).map((f: any) => this.mapDriveFile(f));
-    }
-    return [];
-  }
-
-  async delete(itemPath: string): Promise<void> {
-    let fileId = itemPath;
-    if (itemPath.includes('/') || itemPath.includes('.')) {
-      const fileName = itemPath.split('/').pop() || itemPath;
-      const found = await this.search(fileName);
-      if (found.length > 0) {
-        fileId = found[0].id;
-      }
-    }
-
-    const res = await this.makeRequest(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
-      method: 'DELETE',
-    });
-    if (!res.ok && res.status !== 404) {
-      throw new Error(`Google Drive delete failed with HTTP ${res.status}.`);
-    }
   }
 
   // ==========================================================
