@@ -33,12 +33,12 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="app-adaptive-header">
       {/* Sci-Fi Brand Logo & Platform Badge */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
         <div
           className="scifi-glitch-hover"
           style={{
             fontFamily: 'var(--font-display)',
-            fontSize: '1.05rem',
+            fontSize: 'clamp(0.9rem, 3.5vw, 1.05rem)',
             fontWeight: 700,
             letterSpacing: '0.12em',
             color: 'var(--text-primary)',
@@ -50,16 +50,17 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <div
             style={{
-              width: 14,
-              height: 14,
+              width: 13,
+              height: 13,
               border: '2px solid var(--text-primary)',
               transform: 'rotate(45deg)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              flexShrink: 0,
             }}
           >
-            <div style={{ width: 4, height: 4, background: 'var(--text-primary)' }} />
+            <div style={{ width: 3.5, height: 3.5, background: 'var(--text-primary)' }} />
           </div>
           <span>LIBRIX</span>
         </div>
@@ -75,36 +76,39 @@ export const Header: React.FC<HeaderProps> = ({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 'var(--space-2)',
+          gap: 6,
           background: 'var(--bg-input)',
           border: '1px solid var(--border-subtle)',
           borderRadius: 'var(--radius-sm)',
-          padding: '4px 10px',
-          width: '100%',
+          padding: '4px 8px',
+          flex: '1 1 auto',
           maxWidth: 320,
+          minWidth: 0,
           cursor: 'pointer',
           color: 'var(--text-muted)',
           fontSize: 'var(--text-xs)',
           transition: 'all var(--transition-fast)',
-          margin: '0 var(--space-2)',
+          margin: '0 4px',
         }}
         className="card-interactive"
+        title="Search library, notes and documents (Ctrl+K)"
       >
         <Search size={13} style={{ flexShrink: 0 }} />
-        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>
           Search library, notes...
         </span>
         <span className="palette-shortcut sidebar-rail-hide">Ctrl+K</span>
       </div>
 
-      {/* Action Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
-        {/* Sync Trigger */}
+      {/* Action Controls (Always Visible on Android) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+        {/* Sync Trigger / Refresh Button */}
         <button
           className={`btn-icon btn-sm ${isSyncing ? 'active' : ''}`}
           onClick={onTriggerSync}
           title={isSyncing ? 'Syncing...' : 'Sync Storage'}
           aria-label="Sync Storage"
+          style={{ flexShrink: 0, width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           <RefreshCw size={14} className={isSyncing ? 'spinning' : ''} />
         </button>
@@ -115,16 +119,18 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onToggleTheme}
           title={activeTheme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
           aria-label="Toggle Theme"
+          style={{ flexShrink: 0, width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           {activeTheme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
         </button>
 
-        {/* Libris AI Assistant Button */}
+        {/* Libris AI Assistant Button (Desktop Only • Mobile uses Bottom Bar) */}
         <button
-          className="btn btn-primary btn-sm sidebar-rail-hide"
+          className="btn btn-primary btn-sm sidebar-rail-hide hide-on-mobile"
           onClick={onOpenLibris}
           title="Open Libris AI Research Assistant"
           aria-label="Open Libris AI"
+          style={{ flexShrink: 0 }}
         >
           <Sparkles size={13} />
           <span>Libris AI</span>

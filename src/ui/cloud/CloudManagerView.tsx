@@ -24,6 +24,8 @@ import {
   Key,
   Upload,
   FolderPlus,
+  Search,
+  X,
 } from 'lucide-react';
 import { CloudConnection, StorageProviderType, Document } from '../../core/types';
 import { db } from '../../core/db/DatabaseEngine';
@@ -929,29 +931,67 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
     }
   };
 
+  const [searchQuery, setSearchQuery] = useState('');
   const defaultConnection = connections.find(c => c.isDefault) || connections[0];
+  const filteredConnections = searchQuery.trim()
+    ? connections.filter(c =>
+        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.providerType.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : connections;
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Header Bar */}
       <div className="cloud-manager-header">
-        <div>
-          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 700, letterSpacing: '0.04em' }}>
-            STORAGE CAPACITY & MULTI-CLOUD ARCHITECTURE
-          </h2>
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-            Physical volume detection, Librix usage indexing, and multi-cloud synchronization.
-          </p>
+        <div className="cloud-manager-top-row">
+          <div>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(0.92rem, 3.5vw, var(--text-lg))', fontWeight: 700, letterSpacing: '0.04em', margin: 0 }}>
+              STORAGE CAPACITY & MULTI-CLOUD
+            </h2>
+            <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', margin: '2px 0 0 0' }} className="hide-on-mobile-xs">
+              Physical volume detection, Librix usage indexing, and multi-cloud synchronization.
+            </p>
+          </div>
         </div>
 
         <div className="cloud-manager-actions">
+          {/* Live Search Tool */}
+          <div className="cloud-search-input">
+            <Search size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            <input
+              type="text"
+              placeholder="Search storage..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: 'var(--text-primary)',
+                fontSize: '0.72rem',
+                width: '100%',
+                padding: 0,
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
           {/* Default Storage Destination Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-surface)', padding: '4px 8px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)', flexShrink: 0 }}>
-            <span style={{ fontSize: 'var(--text-2xs)', fontFamily: 'var(--font-tech)', color: 'var(--text-muted)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-surface)', padding: '3px 6px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)', flexShrink: 0 }}>
+            <span style={{ fontSize: '0.62rem', fontFamily: 'var(--font-tech)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
               DEFAULT:
             </span>
             <select
-              style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: 'var(--text-xs)', fontWeight: 600, cursor: 'pointer', outline: 'none' }}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer', outline: 'none' }}
               value={defaultConnection?.id || ''}
               onChange={e => handleSetDefaultProvider(e.target.value)}
             >
@@ -963,22 +1003,36 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
             </select>
           </div>
 
-          <button className="btn btn-secondary btn-sm" onClick={refreshAllStorageData} disabled={isRefreshing} style={{ flexShrink: 0 }}>
-            <RefreshCw size={13} className={isRefreshing ? 'spinning' : ''} />
-            <span>{isRefreshing ? 'Refreshing...' : 'Refresh Quotas'}</span>
-          </button>
-
+          {/* Refresh Quotas Button */}
           <button
             className="btn btn-secondary btn-sm"
-            style={{ color: '#0ea5e9', borderColor: 'rgba(14, 165, 233, 0.4)', flexShrink: 0 }}
+            onClick={refreshAllStorageData}
+            disabled={isRefreshing}
+            style={{ flexShrink: 0, padding: '4px 8px', fontSize: '0.72rem', gap: 5, display: 'flex', alignItems: 'center' }}
+            title="Refresh Storage Quotas"
+          >
+            <RefreshCw size={12} className={isRefreshing ? 'spinning' : ''} />
+            <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+          </button>
+
+          {/* Migrate Vault Button */}
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{ color: '#0ea5e9', borderColor: 'rgba(14, 165, 233, 0.4)', flexShrink: 0, padding: '4px 8px', fontSize: '0.72rem', gap: 5, display: 'flex', alignItems: 'center' }}
             onClick={handleOpenMigrationModal}
             title="Migrate all local books, documents and notes to connected Cloud Storage"
           >
-            <ArrowRightLeft size={13} />
-            <span>Migrate Vault</span>
+            <ArrowRightLeft size={12} />
+            <span>Migrate</span>
           </button>
 
-          <button className="btn btn-primary btn-sm" onClick={() => { setShowAddModal(true); setIsCustomWizard(false); setSelectedPopularType(null); }} style={{ flexShrink: 0 }}>
+          {/* Add Cloud Storage Button */}
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => { setShowAddModal(true); setIsCustomWizard(false); setSelectedPopularType(null); }}
+            style={{ flexShrink: 0, padding: '4px 10px', fontSize: '0.72rem', gap: 5, display: 'flex', alignItems: 'center' }}
+            title="Connect New Cloud Storage Provider"
+          >
             <Plus size={13} />
             <span>Add Storage</span>
           </button>
@@ -1202,7 +1256,7 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 'var(--space-4)' }}>
-              {connections.map(conn => {
+              {filteredConnections.map(conn => {
                 const live = liveQuotas[conn.id];
                 const quotaAvailable = live ? live.isAvailable : false;
                 const total = live?.total || conn.quotaTotal || 0;
@@ -1458,7 +1512,7 @@ export const CloudManagerView: React.FC<CloudManagerViewProps> = ({
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 'var(--space-3)' }}>
-              {connections.map(conn => {
+              {filteredConnections.map(conn => {
                 const live = liveQuotas[conn.id];
                 const gdriveProvider = resolveProvider(conn);
                 const liveStatus = connStates[conn.id];

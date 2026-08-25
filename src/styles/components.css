@@ -1041,6 +1041,15 @@ details > *:not(summary) {
   user-select: none;
   z-index: 40;
   flex-shrink: 0;
+  gap: 6px;
+}
+
+@media (max-width: 768px) {
+  .app-adaptive-header {
+    padding-left: max(var(--space-2), var(--sal));
+    padding-right: max(var(--space-2), var(--sar));
+    gap: 4px;
+  }
 }
 
 /* 3. Adaptive Sidebar (Desktop Full • Tablet Navigation Rail • Phone Hidden) */
@@ -1098,6 +1107,10 @@ details > *:not(summary) {
 /* Phone / Mobile: Sidebar Hidden (Handled by Bottom Navigation) */
 @media (max-width: 768px) {
   .app-adaptive-sidebar {
+    display: none !important;
+  }
+  .sidebar-rail-hide,
+  .hide-on-mobile {
     display: none !important;
   }
 }
@@ -1314,9 +1327,15 @@ details > *:not(summary) {
   justify-content: space-between;
   align-items: center;
   background: var(--bg-app);
-  flex-wrap: wrap;
   gap: var(--space-2);
   flex-shrink: 0;
+}
+
+.cloud-manager-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .cloud-manager-actions {
@@ -1326,20 +1345,52 @@ details > *:not(summary) {
   flex-wrap: wrap;
 }
 
+.cloud-search-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  min-width: 180px;
+  transition: border-color var(--transition-fast);
+}
+.cloud-search-input:focus-within {
+  border-color: var(--color-primary);
+}
+
 @media (max-width: 768px) {
   .cloud-manager-header {
     padding: var(--space-2) var(--space-3);
     flex-direction: column;
     align-items: stretch;
+    gap: 6px;
+  }
+  .cloud-manager-top-row {
+    width: 100%;
   }
   .cloud-manager-actions {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    padding-bottom: 4px;
+    padding-bottom: 2px;
+    white-space: nowrap;
   }
   .cloud-manager-actions::-webkit-scrollbar {
     display: none;
+  }
+  .cloud-search-input {
+    min-width: 120px;
+    flex: 1;
+    padding: 3px 6px;
+    font-size: 0.72rem;
   }
 }
 
