@@ -173,14 +173,25 @@ export class CloudVaultSyncService {
                 }
               }
 
-              // Restore notes with deduplication
+              // Restore notes ONLY if the file actually exists in /LIBRIX/Notes on cloud
               const existingNotes = await db.getNotes();
               const existingNoteIds = new Set(existingNotes.map(n => n.id));
               const existingTitles = new Set(existingNotes.map(n => (n.title || '').trim().toLowerCase()));
 
-              if (Array.isArray(index.notes)) {
+              const cloudNoteFiles = await provider.listFiles('/LIBRIX/Notes').catch(() => []);
+              const existingCloudNoteTitles = new Set(
+                cloudNoteFiles
+                  .filter(f => !f.isDirectory && f.name.toLowerCase().endsWith('.md'))
+                  .map(f => f.name.replace(/\.md$/i, '').replace(/_/g, ' ').trim().toLowerCase())
+              );
+
+              if (Array.isArray(index.notes) && existingCloudNoteTitles.size > 0) {
                 for (const note of index.notes) {
                   const titleKey = (note.title || '').trim().toLowerCase();
+                  if (!existingCloudNoteTitles.has(titleKey)) {
+                    // Note file was deleted on Google Drive, do NOT restore it
+                    continue;
+                  }
                   if (!existingNoteIds.has(note.id) && (!titleKey || titleKey === 'untitled note' || !existingTitles.has(titleKey))) {
                     await db.saveNote(note);
                     existingNoteIds.add(note.id);

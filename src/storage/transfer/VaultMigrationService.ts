@@ -173,7 +173,23 @@ export class VaultMigrationService {
       completedItems++;
     }
 
-    // 2. Migrate Knowledge Vault Notes with nested folders
+    // 2. Clean orphaned drafts on cloud and migrate active notes
+    try {
+      const existingCloudNotes = await targetProvider.listFiles('/LIBRIX/Notes');
+      const validFilenames = new Set(allNotes.map(n => ((n.title || 'Untitled_Note').replace(/[/\\?%*:|"<>]/g, '_') + '.md').toLowerCase()));
+
+      for (const cloudFile of existingCloudNotes) {
+        if (!cloudFile.isDirectory && cloudFile.name.toLowerCase().endsWith('.md')) {
+          if (!validFilenames.has(cloudFile.name.toLowerCase())) {
+            // Delete orphaned intermediate draft from cloud
+            await targetProvider.delete(cloudFile.id || cloudFile.path).catch(() => {});
+          }
+        }
+      }
+    } catch (cleanErr) {
+      console.warn('Could not clean orphaned cloud notes:', cleanErr);
+    }
+
     for (const note of allNotes) {
       onProgress?.({
         totalItems,
@@ -191,12 +207,17 @@ export class VaultMigrationService {
         // Resolve exact nested folder path for notes (e.g. /LIBRIX/Notes/Research/Daily)
         const targetFolderPath = await cloudVaultSyncService.getFolderPathString(note.folderId, '/LIBRIX/Notes');
 
-        await targetProvider.upload(
+        const uploadResult = await targetProvider.upload(
           targetFolderPath,
           `${safeTitle}.md`,
           noteBytes,
           'text/markdown'
         );
+
+        if (uploadResult && uploadResult.id) {
+          note.cloudFileId = uploadResult.id;
+          await db.saveNote(note);
+        }
 
         migratedNotesCount++;
       } catch (err: any) {

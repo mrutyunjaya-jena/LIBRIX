@@ -368,15 +368,6 @@ export class GoogleDriveProvider implements IStorageProvider {
     gdLog('connection_established', { account: this.state.account?.email });
     onProgress?.('Google Drive connected.');
 
-    // Automatically synchronize & fetch /LIBRIX/Library and /LIBRIX/Notes in background
-    setTimeout(async () => {
-      try {
-        await cloudVaultSyncService.syncFromCloudOnLogin(this);
-      } catch (syncErr) {
-        console.warn('[LIBRIX::GoogleDrive] Post-login auto-sync:', syncErr);
-      }
-    }, 100);
-
     return true;
   }
 

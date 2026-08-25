@@ -181,30 +181,31 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const wordsCount = rawMarkdown.trim() ? rawMarkdown.trim().split(/\s+/).length : 0;
   const readingTimeMin = Math.max(1, Math.ceil(wordsCount / 200));
 
-  // Save changes to database and local disk
-  const handleSave = async (customMarkdown?: string, customTitle?: string) => {
+  const handleSave = async (customMarkdown?: string, customTitle?: string, syncToCloud: boolean = false) => {
     const s = latestStateRef.current;
     const activeMarkdown = customMarkdown !== undefined
       ? customMarkdown
       : (s.editorMode === 'source' ? s.rawMarkdown : NotionBlockEngine.blocksToMarkdown(s.blocks));
 
     const currentParsed = parseNoteContent(activeMarkdown);
-    const resolvedTitle = (customTitle !== undefined ? customTitle : s.title) || currentParsed.title || s.note.title || 'Untitled Note';
-    const resolvedSlug = resolvedTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'untitled-note';
+    const resolvedTitle = customTitle !== undefined
+      ? customTitle.trim()
+      : (s.title.trim() || currentParsed.title || s.note.title || 'Untitled Note');
 
-    const updatedFrontmatter = {
-      ...currentParsed.frontmatter,
+    const resolvedSlug = resolvedTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+    const updatedFrontmatter: Record<string, any> = {
+      ...s.note.frontmatter,
       title: resolvedTitle,
       icon: s.icon,
-      cover: s.cover || undefined,
       status: s.status,
-      tags: currentParsed.tags,
-      modified: new Date().toISOString().slice(0, 10),
     };
+    if (s.cover) updatedFrontmatter.cover = s.cover;
+    if (currentParsed.tags.length > 0) updatedFrontmatter.tags = currentParsed.tags;
 
     let finalContent = activeMarkdown;
     const hasFrontmatter = /^---\r?\n[\s\S]*?\r?\n---/.test(activeMarkdown);
-    const hasCustomMeta = s.icon !== '📄' || s.cover || s.status !== 'Draft' || (currentParsed.tags && currentParsed.tags.length > 0);
+    const hasCustomMeta = Boolean(s.icon || s.cover || s.status !== 'Draft' || currentParsed.tags.length > 0);
 
     const fmString =
       `---\ntitle: "${resolvedTitle}"\nicon: "${s.icon}"\nstatus: "${s.status}"\n` +
@@ -239,34 +240,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     // 3. Notify parent
     onSave(updatedNote);
     setIsSaved(true);
-
-    // 4. Background cloud sync (fire-and-forget, cleans old renamed files and updates catalog)
-    (async () => {
-      const cloudProviders = storageRegistry.getAllProviders().filter(p => p.type !== 'local' && p.isConnected());
-      for (const provider of cloudProviders) {
-        try {
-          const targetFolderPath = await cloudVaultSyncService.getFolderPathString(updatedNote.folderId, '/LIBRIX/Notes');
-          const safeTitle = (updatedNote.title || 'Untitled_Note').replace(/[/\\?%*:|"<>]/g, '_');
-
-          // Clean previous file on cloud if note was renamed to prevent duplicate cloud files
-          if (s.note.title && s.note.title !== updatedNote.title) {
-            const oldSafeTitle = s.note.title.replace(/[/\\?%*:|"<>]/g, '_');
-            if (oldSafeTitle !== safeTitle) {
-              await provider.delete(`${targetFolderPath}/${oldSafeTitle}.md`).catch(() => {});
-            }
-          }
-
-          const noteBytes = new TextEncoder().encode(updatedNote.content);
-          await provider.upload(targetFolderPath, `${safeTitle}.md`, noteBytes, 'text/markdown');
-          await cloudVaultSyncService.saveMasterVaultCatalog(provider).catch(() => {});
-        } catch (cloudErr) {
-          console.warn('Could not sync note to cloud provider:', cloudErr);
-        }
-      }
-    })().catch(() => {});
   };
 
-  // Automatic Debounced Auto-Save (500ms)
+  // Automatic Debounced Auto-Save (500ms, local only)
   const isInitialMount = useRef(true);
   useEffect(() => {
     if (isInitialMount.current) {
@@ -566,7 +542,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             </button>
           )}
 
-          <button className="btn btn-primary btn-sm" onClick={() => handleSave()} title="Save Note">
+          <button className="btn btn-primary btn-sm" onClick={() => handleSave(undefined, undefined, true)} title="Save Note">
             <Save size={13} />
             <span>Save</span>
           </button>
@@ -1148,7 +1124,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         <button
           type="button"
           className="btn btn-sm btn-primary"
-          onClick={() => handleSave()}
+          onClick={() => handleSave(undefined, undefined, true)}
           title="Save Note"
           style={{ padding: '0 10px', height: 30, fontSize: '0.72rem', gap: 4 }}
         >

@@ -116,6 +116,7 @@ export interface Note {
   slug: string;
   content: string;
   folderId?: string | null;
+  cloudFileId?: string;
   frontmatter: Record<string, any>;
   tags: string[];
   wikilinks: string[]; // Target note titles or book titles
